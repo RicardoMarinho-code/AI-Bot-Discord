@@ -9,7 +9,7 @@ from discord.ext import commands
 
 import messages as m
 from core.assistente import entra_na_call, peek_assistente
-from core.listen import VoiceListener
+from core.listen import VoiceListener, cancela_lembretes, lembretes_de
 from services import gemini
 
 log = logging.getLogger(__name__)
@@ -82,6 +82,27 @@ class Voice(commands.Cog):
             return
         gemini.escolhe_voz(ctx.guild.id, nome)
         await ctx.respond(m.VOICE_CHANGED.format(voz=nome, estilo=gemini.VOZES[nome]))
+
+
+    @commands.slash_command(name="lembretes", description="Mostro (ou cancelo) os seus lembretes pendentes")
+    async def lembretes(
+        self,
+        ctx: discord.ApplicationContext,
+        cancelar: discord.Option(bool, "cancelar todos", default=False),  # type: ignore[valid-type]
+    ) -> None:
+        # só a pessoa vê: lembrete é coisa dela
+        if cancelar:
+            n = cancela_lembretes(ctx.guild.id, ctx.author.id)
+            await ctx.respond(m.REMINDERS_CANCELED.format(n=n) if n else m.REMINDERS_NONE, ephemeral=True)
+            return
+        pendentes = lembretes_de(ctx.guild.id, ctx.author.id)
+        if not pendentes:
+            await ctx.respond(m.REMINDERS_NONE, ephemeral=True)
+            return
+        lista = "\n".join(
+            m.REMINDERS_ITEM.format(texto=lem.texto, quando=int(lem.vence_em)) for lem in pendentes[:20]
+        )
+        await ctx.respond(m.REMINDERS_LIST.format(lista=lista), ephemeral=True)
 
 
 def setup(bot: discord.Bot) -> None:

@@ -31,6 +31,10 @@ VOICE_ANSWER = '🗣️ **{quem}:** *"{pergunta}"*\n>>> {resposta}'
 VOICE_ANSWER_FAILED = "😵 Não consegui responder agora. Pergunta de novo daqui a pouco?"
 REMINDER = "⏰ {mencao}, lembrete: **{texto}**"
 REMINDER_SEM_TEXTO = "deu a hora que você pediu"
+REMINDERS_NONE = f'Você não tem lembretes pendentes. Pede um: **"{NOME}, me avisa em 10 minutos"** ⏰'
+REMINDERS_LIST = "⏰ **Seus lembretes:**\n{lista}"
+REMINDERS_ITEM = "• **{texto}**, <t:{quando}:R>"
+REMINDERS_CANCELED = "🗑️ Cancelei {n} lembrete(s)."
 
 # ── Geral ────────────────────────────────────────────────────────────────────
 COMMAND_ERROR = "😵 Deu um erro aqui do meu lado. Tenta de novo?"

@@ -29,7 +29,7 @@ _SECTIONS = [
             f' responder. E sorteio de verdade: *"{m.NOME}, joga um dado"*,'
             ' *"sorteia de 1 a 100"*, *"cara ou coroa?"*.\n'
             f'Lembretes: *"{m.NOME}, me avisa em 10 minutos pra tirar a pizza"*'
-            " — na hora, eu te marco aqui no chat."
+            " — na hora, eu te marco aqui no chat. `/lembretes` mostra ou cancela os seus."
         ),
     ),
     (

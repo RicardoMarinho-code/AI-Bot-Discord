@@ -34,9 +34,36 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+
+
+@dataclass
+class Lembrete:
+    guild_id: int
+    user_id: int
+    texto: str
+    vence_em: float  # time.time(): o /lembretes mostra como "daqui a X" do Discord
+
+
 # os lembretes pendentes: referência forte (o asyncio só guarda uma fraca) e
 # fora da escuta, para o aviso chegar mesmo se o bot sair da call antes
-_lembretes: set[asyncio.Task] = set()
+_lembretes: dict[asyncio.Task, Lembrete] = {}
+
+
+def lembretes_de(guild_id: int, user_id: int) -> list[Lembrete]:
+    """Os lembretes pendentes de alguém num servidor, do mais próximo ao mais longe."""
+    return sorted(
+        (lem for lem in _lembretes.values() if lem.guild_id == guild_id and lem.user_id == user_id),
+        key=lambda lem: lem.vence_em,
+    )
+
+
+def cancela_lembretes(guild_id: int, user_id: int) -> int:
+    """Cancela os lembretes pendentes de alguém; devolve quantos eram."""
+    tarefas = [t for t, lem in _lembretes.items() if lem.guild_id == guild_id and lem.user_id == user_id]
+    for tarefa in tarefas:
+        tarefa.cancel()
+        _lembretes.pop(tarefa, None)  # já, sem esperar o callback: o /lembretes logo depois não o vê
+    return len(tarefas)
 
 BYTES_PER_SECOND = 192_000  # 48kHz * 2 canais * 2 bytes
 MIN_SPEECH_S = 0.4
@@ -896,8 +923,10 @@ class VoiceListener:
                 log.warning("⏰ [%s] não consegui mandar o lembrete", user_id, exc_info=True)
 
         tarefa = asyncio.create_task(avisa())
-        _lembretes.add(tarefa)
-        tarefa.add_done_callback(_lembretes.discard)
+        _lembretes[tarefa] = Lembrete(
+            self.assistente.guild.id, user_id, texto or m.REMINDER_SEM_TEXTO, time.time() + segundos,
+        )
+        tarefa.add_done_callback(lambda t: _lembretes.pop(t, None))
         log.info("⏰ [%s] lembrete agendado para daqui a %ds", user_id, segundos)
 
     # --- sair ---
