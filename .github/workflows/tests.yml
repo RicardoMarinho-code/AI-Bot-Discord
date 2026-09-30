@@ -1,0 +1,25 @@
+# Testes a cada push: em 12/09/2026 um NameError chegou em produção porque o
+# suite só rodava na mão. O job é o mesmo comando do dev: ruff (nomes
+# indefinidos) + pytest. Sem rede, sem Discord, sem FFmpeg.
+name: testes
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: dependências
+        run: pip install -r requirements-dev.txt
+      - name: nomes indefinidos (ruff)
+        run: python -m ruff check --select F821,F822,F823,E9 --output-format concise src
+      - name: pytest
+        run: python -m pytest -q

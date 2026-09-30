@@ -1,0 +1,645 @@
+"""A conversa com o Gemini Live — sem rede e sem Discord.
+
+O serviço (services/gemini.py) com uma sessão Live falsa: a resposta chega aos
+pedaços e cada pedaço é repassado na hora; a memória das últimas trocas vai
+no começo da sessão seguinte; o Gemini sabe com quem fala e que horas são. E a
+escuta (core/listen.py): a resposta toca enquanto chega, vai escrita para o
+chat, e uma pergunta nova ou um "para" interrompe a anterior.
+"""
+import asyncio
+import time
+from datetime import datetime
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import numpy as np
+import pytest
+
+import config
+from core import listen
+from core.audio import FRAME_BYTES, SILENCIO, FalaAoVivo, FonteDaFala
+from core.listen import VoiceListener
+from services import gemini
+
+UM_SEGUNDO = b"\x00" * listen.BYTES_PER_SECOND
+
+
+def _frame(valor: int) -> bytes:
+    return np.full(FRAME_BYTES // 2, valor, dtype=np.int16).tobytes()
+
+
+# ── conversão de áudio ───────────────────────────────────────────────────────
+
+
+def test_discord_para_16k_mono():
+    um_segundo_48k_estereo = np.full(48000 * 2, 1000, dtype=np.int16).tobytes()
+
+    amostras = np.frombuffer(gemini.pcm_discord_para_16k(um_segundo_48k_estereo), dtype=np.int16)
+
+    assert len(amostras) == 16000
+    assert abs(int(amostras[100]) - 1000) <= 1
+
+
+def test_24k_para_discord_dobra_a_taxa_e_duplica_o_canal():
+    saida = gemini.pcm_24k_para_discord(np.full(24000, 500, dtype=np.int16).tobytes())
+
+    assert len(saida) == listen.BYTES_PER_SECOND  # 1s de 48 kHz estéreo
+    estereo = np.frombuffer(saida, dtype=np.int16).reshape(-1, 2)
+    assert (estereo[:, 0] == estereo[:, 1]).all()
+    assert estereo[10, 0] == 500
+
+
+def test_pedaco_do_streaming_nao_e_completado_com_zeros():
+    """Completar cada pedaço até o frame poria silêncio NO MEIO da fala (estalos)."""
+    pedaco = gemini.pcm_24k_para_48k_estereo(np.full(1000, 7, dtype=np.int16).tobytes())
+    assert len(pedaco) == 1000 * 2 * 2 * 2
+    assert gemini.pcm_24k_para_48k_estereo(b"") == b""
+
+
+# ── data e hora ──────────────────────────────────────────────────────────────
+
+
+def test_data_e_hora_por_extenso():
+    assert gemini.descreve_agora(datetime(2026, 9, 27, 14, 5)) == "domingo, 27 de setembro de 2026, 14:05"
+
+
+def test_fuso_invalido_cai_na_hora_do_computador(monkeypatch):
+    monkeypatch.setattr(config, "FUSO", "Nao/Existe")
+    assert gemini.agora().tzinfo is not None
+
+
+def test_instrucao_diz_quem_fala_e_que_horas_sao():
+    texto = gemini._instrucao("Ricardo")
+    assert "Ricardo" in texto and "Agora é" in texto and config.BOT_NAME in texto
+    assert "Quem está falando" not in gemini._instrucao("")
+
+
+def test_instrucao_pede_boa_vontade_e_ensina_a_sair():
+    """"Se o áudio vier cortado, peça para repetir" fazia o Gemini pedir para
+    repetir o que dava para entender; e ele dizia "saindo!" sem sair — agora
+    ele sai de verdade, pela ferramenta."""
+    texto = gemini._instrucao()
+    assert "boa vontade" in texto and "diga o que você entendeu" in texto
+    assert gemini._SAIR in texto and "expulsando" in texto
+
+
+# ── memória da conversa ──────────────────────────────────────────────────────
+
+
+def test_memoria_guarda_as_trocas_e_expira(monkeypatch):
+    gemini.esquece(99)
+    gemini._lembra(99, "capital da França?", "Paris.")
+    assert len(gemini._memoria(99)) == 2  # pergunta + resposta
+
+    agora = time.monotonic()
+    monkeypatch.setattr(gemini.time, "monotonic", lambda: agora + gemini._MEMORIA_S + 1)
+    assert gemini._memoria(99) == []
+
+
+def test_memoria_tem_teto():
+    gemini.esquece(98)
+    for i in range(gemini._MEMORIA_TROCAS + 3):
+        gemini._lembra(98, f"p{i}", f"r{i}")
+    assert len(gemini._memoria(98)) == 2 * gemini._MEMORIA_TROCAS
+
+
+def test_troca_sem_transcricao_nao_entra_na_memoria():
+    gemini.esquece(97)
+    gemini._lembra(97, "", "Paris.")
+    assert gemini._memoria(97) == []
+
+
+# ── a sessão Live (falsa) ────────────────────────────────────────────────────
+
+
+def _msg(*, data=b"", ouviu="", falou="", fim=False):
+    conteudo = SimpleNamespace(
+        input_transcription=SimpleNamespace(text=ouviu) if ouviu else None,
+        output_transcription=SimpleNamespace(text=falou) if falou else None,
+        turn_complete=fim,
+    )
+    return SimpleNamespace(data=data or None, server_content=conteudo, tool_call=None)
+
+
+def _chama_ferramenta(nome):
+    chamada = SimpleNamespace(id="c1", name=nome, args={})
+    return SimpleNamespace(
+        data=None, server_content=None, tool_call=SimpleNamespace(function_calls=[chamada]),
+    )
+
+
+class _Sessao:
+    def __init__(self) -> None:
+        self.mensagens = []
+        self.enviado = []
+        self.configs = []
+
+    async def send_client_content(self, **kw):
+        self.enviado.append(("memoria", kw))
+
+    async def send_tool_response(self, **kw):
+        self.enviado.append(("ferramenta", kw))
+
+    async def send_realtime_input(self, **kw):
+        self.enviado.append(("tempo_real", kw))
+
+    async def receive(self):
+        """Como o SDK: cada chamada entrega UM turno (até o turn_complete); o que
+        chega depois do fim do turno sai na chamada seguinte."""
+        while self.mensagens:
+            msg = self.mensagens.pop(0)
+            yield msg
+            if msg.server_content is not None and msg.server_content.turn_complete:
+                return
+
+
+class _Conexao:
+    def __init__(self, sessao) -> None:
+        self.sessao = sessao
+
+    async def __aenter__(self):
+        return self.sessao
+
+    async def __aexit__(self, *_):
+        return False
+
+
+@pytest.fixture
+def sessao(monkeypatch):
+    """Instala um cliente Live falso; o teste preenche `sessao.mensagens`."""
+    s = _Sessao()
+
+    def conecta(model, config):
+        s.configs.append(config)
+        return _Conexao(s)
+
+    cliente = SimpleNamespace(aio=SimpleNamespace(live=SimpleNamespace(connect=conecta)))
+    monkeypatch.setattr(gemini, "_cliente", cliente)
+    return s
+
+
+def test_resposta_chega_aos_pedacos_e_e_repassada_na_hora(sessao):
+    gemini.esquece(1)
+    pedaco_24k = np.full(2400, 300, dtype=np.int16).tobytes()  # 0,1s
+    sessao.mensagens = [
+        _msg(ouviu="capital da "), _msg(ouviu="França?"),
+        _msg(data=pedaco_24k, falou="É "), _msg(data=pedaco_24k, falou="Paris."),
+        _msg(fim=True),
+    ]
+    recebidos = []
+
+    resposta = asyncio.run(gemini.responde(1, UM_SEGUNDO, quem="Ricardo", ao_falar=recebidos.append))
+
+    assert len(recebidos) == 2 and all(len(p) == 2400 * 8 for p in recebidos)
+    assert resposta.texto == "É Paris." and resposta.pergunta == "capital da França?"
+    assert resposta.segundos_de_fala == pytest.approx(0.2)
+    assert "Ricardo" in sessao.configs[0].system_instruction
+    # as ferramentas: pesquisa Google (internet) e sair da call
+    [busca, ferramenta] = sessao.configs[0].tools
+    assert busca.google_search is not None
+    assert [f.name for f in ferramenta.function_declarations] == [gemini._SAIR]
+    assert not resposta.quer_sair
+    # a pergunta vai marcada: início, áudio 16 kHz, fim
+    tipos = [next(iter(kw)) for _, kw in sessao.enviado]
+    assert tipos[0] == "activity_start" and tipos[-1] == "activity_end"
+    assert gemini._memoria(1)  # a troca ficou para a próxima pergunta
+
+
+def test_mandado_embora_o_gemini_chama_a_ferramenta_e_se_despede(sessao):
+    """"Jarvis, ninguém te chamou, vaza": a lista curta não pega, o Gemini sim."""
+    sessao.mensagens = [
+        _msg(ouviu="Jarvis, ninguém te chamou, vaza"),
+        _chama_ferramenta(gemini._SAIR),
+        _msg(falou="Tá bom, fui!"),
+        _msg(fim=True),
+    ]
+
+    resposta = asyncio.run(gemini.responde(4, UM_SEGUNDO))
+
+    assert resposta.quer_sair and resposta.texto == "Tá bom, fui!"
+    [(_, kw)] = [e for e in sessao.enviado if e[0] == "ferramenta"]
+    [retorno] = kw["function_responses"]
+    assert retorno.id == "c1" and retorno.name == gemini._SAIR  # o Gemini continua a falar
+
+
+def test_despedida_que_vem_num_turno_novo_depois_da_ferramenta_toca(sessao):
+    """30/09, na call: o turno da ferramenta fechava sem fala e o bot saía mudo —
+    a despedida vem num turno novo, depois da resposta da ferramenta."""
+    pedaco_24k = np.full(2400, 300, dtype=np.int16).tobytes()
+    sessao.mensagens = [
+        _msg(ouviu="Jarvis, bye-bye."), _chama_ferramenta(gemini._SAIR), _msg(fim=True),
+        _msg(data=pedaco_24k, falou="Tchau, até mais!"), _msg(fim=True),
+    ]
+    recebidos = []
+
+    resposta = asyncio.run(gemini.responde(5, UM_SEGUNDO, ao_falar=recebidos.append))
+
+    assert resposta.quer_sair and resposta.texto == "Tchau, até mais!" and len(recebidos) == 1
+
+
+def test_sem_despedida_depois_da_ferramenta_nao_espera_para_sempre(sessao, monkeypatch):
+    monkeypatch.setattr(gemini, "_DESPEDIDA_S", 0.05)
+    sessao.mensagens = [_chama_ferramenta(gemini._SAIR), _msg(fim=True)]
+
+    resposta = asyncio.run(gemini.responde(5, UM_SEGUNDO))
+
+    assert resposta.quer_sair and not resposta.segundos_de_fala
+
+
+def test_pedaco_da_pergunta_que_chega_depois_do_fim_do_turno_nao_se_perde(sessao):
+    """27/09: o chat mostrou "Jarvis, que dia é hoje e" — o resto da transcrição
+    da pergunta chegou depois do turn_complete."""
+    sessao.mensagens = [
+        _msg(ouviu="Jarvis, que dia é hoje e"),
+        _msg(falou="Hoje é domingo."),
+        _msg(fim=True),
+        _msg(ouviu=" qual é o meu nome?"),
+    ]
+
+    resposta = asyncio.run(gemini.responde(6, UM_SEGUNDO))
+
+    assert resposta.pergunta == "Jarvis, que dia é hoje e qual é o meu nome?"
+
+
+def test_memoria_vai_no_comeco_da_sessao_seguinte(sessao):
+    gemini.esquece(2)
+    gemini._lembra(2, "capital da França?", "Paris.")
+    sessao.mensagens = [_msg(fim=True)]
+
+    asyncio.run(gemini.responde(2, UM_SEGUNDO))
+
+    assert sessao.enviado[0][0] == "memoria"
+    assert sessao.enviado[0][1]["turn_complete"] is False
+
+
+def test_voz_escolhida_no_env_vai_na_configuracao(sessao, monkeypatch):
+    monkeypatch.setattr(config, "GEMINI_VOZ", "Kore")
+    sessao.mensagens = [_msg(fim=True)]
+
+    asyncio.run(gemini.responde(3, UM_SEGUNDO))
+
+    voz = sessao.configs[0].speech_config.voice_config.prebuilt_voice_config.voice_name
+    assert voz == "Kore"
+
+
+# ── a fala ao vivo ───────────────────────────────────────────────────────────
+
+
+def test_fala_espera_o_pulmao_antes_de_comecar():
+    fala = FalaAoVivo(pulmao_s=0.1)  # 5 frames
+    fala.escreve(_frame(1) * 3)
+
+    assert fala.proximo() == SILENCIO  # 3 < 5: ainda enchendo
+    fala.escreve(_frame(2) * 2)
+    assert fala.proximo() == _frame(1)
+
+
+def test_fala_emenda_pedacos_que_nao_fecham_frame():
+    fala = FalaAoVivo(pulmao_s=0.02)
+    inteiro = _frame(5)
+    fala.escreve(inteiro[:1000])
+    fala.escreve(inteiro[1000:])
+
+    assert fala.proximo() == inteiro
+
+
+def test_fala_que_atrasa_vira_silencio_e_conta_o_engasgo():
+    fala = FalaAoVivo(pulmao_s=0.02)
+    fala.escreve(_frame(1))
+    assert fala.proximo() == _frame(1)
+
+    assert fala.proximo() == SILENCIO
+    assert fala.proximo() == SILENCIO
+    assert fala.engasgos == 1  # um buraco, não um por frame
+    assert fala.ativa()
+
+
+def test_fala_acaba_depois_de_tocar_tudo():
+    fala = FalaAoVivo(pulmao_s=10)  # pulmão grande: termina() libera mesmo assim
+    fala.escreve(_frame(1) + _frame(2)[:100])
+    fala.termina()
+
+    assert fala.proximo() == _frame(1)
+    ultimo = fala.proximo()
+    assert len(ultimo) == FRAME_BYTES and ultimo.endswith(b"\x00" * 100)
+    assert fala.proximo() is None
+    assert not fala.ativa()
+
+
+def test_calar_corta_na_hora():
+    fala = FalaAoVivo(pulmao_s=0.02)
+    fala.escreve(_frame(1) * 10)
+
+    assert fala.cala() is True
+    assert fala.proximo() is None
+    assert fala.cala() is False  # já calada
+
+
+def test_fonte_da_fala_termina_com_a_fala():
+    fala = FalaAoVivo(pulmao_s=0.02)
+    fala.escreve(_frame(3))
+    fala.termina()
+    fonte = FonteDaFala(fala)
+
+    assert fonte.is_opus() is False
+    assert fonte.read() == _frame(3)
+    assert fonte.read() == b""
+
+
+# ── a escuta conversando com o Gemini ────────────────────────────────────────
+
+
+def _listener():
+    assistente = MagicMock()
+    assistente.guild.id = 1
+    assistente.cala.return_value = False
+    assistente.nome_de = AsyncMock(return_value="Ricardo")
+    canal = MagicMock()
+    canal.send = AsyncMock()
+    return VoiceListener(assistente, canal)
+
+
+def _responde_com(monkeypatch, resposta, pedacos=()):
+    async def responde(guild_id, pcm, *, quem="", ao_falar=None):
+        responde.chamadas.append((guild_id, pcm, quem))
+        for pedaco in pedacos:
+            ao_falar(pedaco)
+        if isinstance(resposta, BaseException):
+            raise resposta
+        return resposta
+
+    responde.chamadas = []
+    monkeypatch.setattr(gemini, "responde", responde)
+    return responde
+
+
+def _conversa(escuta, user_id=7, texto="Jarvis, capital?", pcm=UM_SEGUNDO):
+    async def roda():
+        escuta._conversa_nova(user_id, texto, pcm)
+        await escuta._conversa
+
+    asyncio.run(roda())
+
+
+def test_a_resposta_toca_enquanto_chega_e_vai_para_o_chat(monkeypatch):
+    fala = FalaAoVivo(pulmao_s=0.02)
+    resposta = gemini.Resposta(texto="Paris.", pergunta="capital da França?", segundos_de_fala=1.0)
+    responde = _responde_com(monkeypatch, resposta, pedacos=[_frame(1), _frame(2)])
+    escuta = _listener()
+    escuta.assistente.fala_ao_vivo.return_value = fala
+
+    _conversa(escuta)
+
+    assert responde.chamadas == [(1, UM_SEGUNDO, "Ricardo")]
+    escuta.assistente.fala_ao_vivo.assert_called_once()  # uma fala para a resposta inteira
+    assert fala.proximo() == _frame(1) and fala.proximo() == _frame(2)
+    assert fala.proximo() is None  # terminada quando a resposta acabou
+    enviado = escuta.text_channel.send.await_args.args[0]
+    assert "Ricardo" in enviado and "capital da França?" in enviado and "Paris." in enviado
+
+
+def test_mandado_embora_pelo_gemini_se_despede_e_sai(monkeypatch):
+    fala = FalaAoVivo(pulmao_s=0.02)
+    _responde_com(
+        monkeypatch,
+        gemini.Resposta(texto="Tá bom, fui!", pergunta="ninguém te chamou", segundos_de_fala=1.0, quer_sair=True),
+        pedacos=[_frame(1)],
+    )
+    escuta = _listener()
+    escuta.assistente.fala_ao_vivo.return_value = fala
+    escuta.assistente.espera_efeito = AsyncMock()
+    escuta.assistente.sai = AsyncMock()
+
+    async def roda():
+        escuta._conversa_nova(7, "Jarvis, ninguém te chamou, vaza", UM_SEGUNDO)
+        tarefa = escuta._conversa
+        await asyncio.sleep(0.05)
+        assert fala.proximo() == _frame(1)  # a despedida toca antes de sair
+        await tarefa
+
+    asyncio.run(roda())
+
+    escuta.assistente.sai.assert_awaited_once()
+    enviados = [c.args[0] for c in escuta.text_channel.send.await_args_list]
+    assert "Tá bom, fui!" in enviados[0] and enviados[-1] == listen.m.VOICE_BYE
+    assert 7 not in escuta._chamados  # sem modo conversa: o bot está indo embora
+
+
+def test_sem_transcricao_do_gemini_o_chat_usa_a_do_whisper(monkeypatch):
+    _responde_com(monkeypatch, gemini.Resposta(texto="Paris.", segundos_de_fala=1.0))
+    escuta = _listener()
+
+    _conversa(escuta, texto="Jarvis, capital da França?")
+
+    assert "Jarvis, capital da França?" in escuta.text_channel.send.await_args.args[0]
+
+
+def test_respostas_fora_do_chat_se_desligado(monkeypatch):
+    monkeypatch.setattr(config, "RESPOSTAS_NO_CHAT", False)
+    _responde_com(monkeypatch, gemini.Resposta(texto="Paris.", segundos_de_fala=1.0))
+    escuta = _listener()
+
+    _conversa(escuta)
+
+    escuta.text_channel.send.assert_not_awaited()
+
+
+def test_falha_antes_de_falar_avisa_no_chat(monkeypatch):
+    _responde_com(monkeypatch, TimeoutError())
+    escuta = _listener()
+
+    _conversa(escuta)
+
+    assert escuta.text_channel.send.await_args.args[0] == listen.m.VOICE_ANSWER_FAILED
+
+
+def test_recusa_de_cara_tenta_de_novo_sem_a_memoria(monkeypatch):
+    """27/09: "1007 Precondition check failed" um segundo depois de pedir, logo
+    após duas trocas sem sentido na memória — a pergunta se perdia."""
+    tentativas = []
+
+    async def responde(guild_id, pcm, *, quem="", ao_falar=None):
+        tentativas.append(bool(gemini._memoria(guild_id)))
+        if len(tentativas) == 1:
+            raise RuntimeError("1007 None. Precondition check failed.")
+        ao_falar(_frame(1))
+        return gemini.Resposta(texto="Paris.", pergunta="capital?", segundos_de_fala=1.0)
+
+    monkeypatch.setattr(gemini, "responde", responde)
+    gemini.esquece(1)
+    gemini._lembra(1, "amanecer mi pene", "Não entendi.")
+    escuta = _listener()
+    escuta.assistente.fala_ao_vivo.return_value = FalaAoVivo(pulmao_s=0.02)
+
+    _conversa(escuta)
+
+    assert tentativas == [True, False]  # a segunda já sem a memória
+    assert listen.m.VOICE_ANSWER_FAILED not in [c.args[0] for c in escuta.text_channel.send.await_args_list]
+
+
+def test_falha_depois_de_comecar_a_falar_nao_tenta_de_novo(monkeypatch):
+    chamadas = _responde_com(monkeypatch, TimeoutError(), pedacos=[_frame(1)])
+    escuta = _listener()
+    escuta.assistente.fala_ao_vivo.return_value = FalaAoVivo(pulmao_s=0.02)
+
+    _conversa(escuta)
+
+    assert len(chamadas.chamadas) == 1  # repetir agora dobraria a resposta
+
+
+def test_falha_no_meio_da_fala_nao_manda_erro_e_termina_a_fala(monkeypatch):
+    fala = FalaAoVivo(pulmao_s=0.02)
+    _responde_com(monkeypatch, TimeoutError(), pedacos=[_frame(1)])
+    escuta = _listener()
+    escuta.assistente.fala_ao_vivo.return_value = fala
+
+    _conversa(escuta)
+
+    escuta.text_channel.send.assert_not_awaited()
+    assert fala.proximo() == _frame(1) and fala.proximo() is None
+
+
+def test_resposta_vazia_avisa_no_chat(monkeypatch):
+    _responde_com(monkeypatch, gemini.Resposta())
+    escuta = _listener()
+
+    _conversa(escuta)
+
+    assert escuta.text_channel.send.await_args.args[0] == listen.m.VOICE_ANSWER_FAILED
+
+
+def test_fora_da_call_a_resposta_fica_so_no_chat(monkeypatch):
+    _responde_com(
+        monkeypatch, gemini.Resposta(texto="Paris.", pergunta="capital?", segundos_de_fala=1.0),
+        pedacos=[_frame(1), _frame(2)],
+    )
+    escuta = _listener()
+    escuta.assistente.fala_ao_vivo.return_value = None
+
+    _conversa(escuta)
+
+    escuta.assistente.fala_ao_vivo.assert_called_once()  # não tenta de novo a cada pedaço
+    assert "Paris." in escuta.text_channel.send.await_args.args[0]
+
+
+@pytest.mark.parametrize("debug", [False, True])
+def test_o_que_o_gemini_ouviu_so_vai_para_o_log_no_diagnostico(monkeypatch, caplog, debug):
+    monkeypatch.setattr(config, "VOICE_DEBUG", debug)
+    _responde_com(monkeypatch, gemini.Resposta(texto="Paris.", pergunta="capital da França?", segundos_de_fala=1.0))
+    escuta = _listener()
+
+    with caplog.at_level("INFO", logger="core.listen"):
+        _conversa(escuta)
+
+    assert ("capital da França?" in caplog.text) is debug
+    assert ("Paris." in caplog.text) is debug
+
+
+def test_erro_inesperado_na_conversa_vai_para_o_log(monkeypatch, caplog):
+    _responde_com(monkeypatch, gemini.Resposta(texto="Paris.", segundos_de_fala=1.0))
+    escuta = _listener()
+    escuta.text_channel.send = AsyncMock(side_effect=RuntimeError("discord fora"))
+
+    with caplog.at_level("ERROR", logger="core.listen"):
+        _conversa(escuta)
+
+    assert "erro na conversa com o Gemini" in caplog.text
+
+
+# ── interromper ──────────────────────────────────────────────────────────────
+
+
+def _gemini_que_espera(monkeypatch, liberar: asyncio.Event):
+    async def responde(guild_id, pcm, *, quem="", ao_falar=None):
+        responde.comecou = True
+        await liberar.wait()
+        return gemini.Resposta(texto="ok", segundos_de_fala=1.0)
+
+    responde.comecou = False
+    monkeypatch.setattr(gemini, "responde", responde)
+    return responde
+
+
+def test_a_escuta_fica_livre_enquanto_o_gemini_responde(monkeypatch):
+    """A resposta chega no ritmo da fala (10s+): com o worker preso nela, um
+    "Jarvis, para" no meio só seria ouvido depois do fim."""
+    async def roda():
+        liberar = asyncio.Event()
+        responde = _gemini_que_espera(monkeypatch, liberar)
+        escuta = _listener()
+        escuta._conversa_nova(7, "Jarvis, conta uma história", UM_SEGUNDO)  # não bloqueia
+        await asyncio.sleep(0)
+        assert responde.comecou and not escuta._conversa.done()
+        liberar.set()
+        await escuta._conversa
+
+    asyncio.run(roda())
+
+
+def test_interromper_cancela_o_pedido_que_ainda_pensa(monkeypatch):
+    async def roda():
+        _gemini_que_espera(monkeypatch, asyncio.Event())  # nunca responde
+        escuta = _listener()
+        escuta._conversa_nova(7, "Jarvis, conta uma história", UM_SEGUNDO)
+        await asyncio.sleep(0)
+        conversa = escuta._conversa
+
+        assert escuta._interrompe_conversa() is True
+        await asyncio.sleep(0)
+        assert conversa.cancelled()
+        assert escuta._interrompe_conversa() is False  # nada mais em andamento
+
+    asyncio.run(roda())
+
+
+def test_pergunta_nova_interrompe_a_anterior(monkeypatch):
+    async def roda():
+        _gemini_que_espera(monkeypatch, asyncio.Event())
+        escuta = _listener()
+        escuta._conversa_nova(7, "Jarvis, primeira", UM_SEGUNDO)
+        await asyncio.sleep(0)
+        primeira = escuta._conversa
+        escuta._conversa_nova(7, "Jarvis, segunda", UM_SEGUNDO)
+        await asyncio.sleep(0)
+        assert primeira.cancelled() and escuta._conversa is not primeira
+        escuta._conversa.cancel()
+
+    asyncio.run(roda())
+
+
+# ── modo conversa ────────────────────────────────────────────────────────────
+
+
+def test_depois_de_responder_quem_perguntou_continua_sem_o_nome(monkeypatch):
+    monkeypatch.setattr(config, "VOICE_CONVERSA_S", 8.0)
+    _responde_com(monkeypatch, gemini.Resposta(texto="Paris.", segundos_de_fala=1.0), pedacos=[_frame(1)])
+    escuta = _listener()
+    escuta.assistente.fala_ao_vivo.return_value = FalaAoVivo()
+
+    _conversa(escuta, user_id=7)
+
+    assert escuta._chamados[7] > time.monotonic() + 7  # janela aberta só para quem perguntou
+    assert 8 not in escuta._chamados
+
+
+def test_modo_conversa_desligado(monkeypatch):
+    monkeypatch.setattr(config, "VOICE_CONVERSA_S", 0)
+    _responde_com(monkeypatch, gemini.Resposta(texto="Paris.", segundos_de_fala=1.0), pedacos=[_frame(1)])
+    escuta = _listener()
+    escuta.assistente.fala_ao_vivo.return_value = FalaAoVivo()
+
+    _conversa(escuta)
+
+    assert escuta._chamados == {}
+
+
+def test_sem_voz_nao_abre_a_janela(monkeypatch):
+    """Resposta que ninguém ouviu (bot fora da call) não convida continuação."""
+    monkeypatch.setattr(config, "VOICE_CONVERSA_S", 8.0)
+    _responde_com(monkeypatch, gemini.Resposta(texto="Paris.", segundos_de_fala=1.0), pedacos=[_frame(1)])
+    escuta = _listener()
+    escuta.assistente.fala_ao_vivo.return_value = None
+
+    _conversa(escuta)
+
+    assert escuta._chamados == {}

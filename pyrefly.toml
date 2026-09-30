@@ -1,0 +1,4 @@
+# O bot roda de dentro de src/ (python src/main.py): é lá que o editor deve
+# procurar os módulos (config, core, services…) — sem isto o VS Code marca
+# todo import do projeto como "módulo não encontrado".
+search-path = ["src"]

@@ -1,0 +1,7 @@
+# scripts e units vão para a VM Linux do jeito que estão: CRLF quebra o bash
+# ("$'\r': command not found") e o systemd. Com core.autocrlf=true no Windows,
+# sem isto um checkout novo converteria tudo.
+*.sh text eol=lf
+*.service text eol=lf
+*.timer text eol=lf
+*.path text eol=lf

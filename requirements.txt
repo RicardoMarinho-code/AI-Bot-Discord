@@ -1,0 +1,12 @@
+# Versões EXATAS de propósito: o monkeypatch de voz (src/core/pycord_voice_patch.py,
+# py-cord 2.8 issue #3139) depende de internals privadas — upgrade é ato
+# consciente (bump + teste de voz na call), nunca efeito colateral de
+# `pip install -r`. Dev: use requirements-dev.txt.
+py-cord[voice]==2.8.1
+python-dotenv==1.2.2
+faster-whisper==1.2.1
+numpy==2.5.1
+aiohttp==3.14.3           # usado direto em services/http.py e speech (Groq)
+google-genai==2.25.0      # Gemini Live: as respostas faladas (services/gemini.py)
+tzdata==2026.4            # fusos horários no Windows: o bot diz ao Gemini que horas são
+openai                    # usado só pelo bot.py antigo (API da NVIDIA)
