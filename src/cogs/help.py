@@ -11,6 +11,7 @@ _SECTIONS = [
         "`/sair` — saio da call (ou fale "
         f'*"{m.NOME}, sai da call"*, *"{m.NOME}, pode ir embora"* ou *"{m.NOME}, tchau"*)\n'
         "`/voz` — troco a minha voz neste servidor (masculinas e femininas)\n"
+        "`/status` — como eu estou: call, voz, memória, lembretes\n"
         "Se todo mundo sair, eu saio sozinho depois de 2 minutos.",
     ),
     (

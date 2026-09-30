@@ -27,6 +27,7 @@ também aparece escrita no chat.
 | `/esquecer` | Apaga a memória da conversa neste servidor, na hora |
 | `/lembretes` | Mostra os seus lembretes pendentes (com `cancelar`, apaga todos) |
 | `/voz` | Troca a voz do bot neste servidor, na hora (fica salva em `data/vozes.json`) |
+| `/status` | Como o bot está neste servidor: call, voz, memória, lembretes, ping |
 | `/ajuda` | O guia, dentro do Discord |
 
 ## Como usar na call

@@ -37,6 +37,19 @@ REMINDERS_LIST = "⏰ **Seus lembretes:**\n{lista}"
 REMINDERS_ITEM = "• **{texto}**, <t:{quando}:R>"
 REMINDERS_CANCELED = "🗑️ Cancelei {n} lembrete(s)."
 
+# ── /status ──────────────────────────────────────────────────────────────────
+STATUS = (
+    "📊 **Status**\n"
+    "🎧 {call}\n"
+    "🎙️ Voz: **{voz}**\n"
+    "🧠 Memória: {trocas} troca(s) da conversa\n"
+    "⏰ Lembretes pendentes aqui: {lembretes}\n"
+    "📶 Ping: {ping} ms · no ar há {no_ar}\n"
+    "-# Modelo: {modelo}"
+)
+STATUS_IN_CALL = "Na call em {canal}"
+STATUS_OUT_OF_CALL = "Fora da call (use `/entrar`)"
+
 # ── Geral ────────────────────────────────────────────────────────────────────
 COMMAND_ERROR = "😵 Deu um erro aqui do meu lado. Tenta de novo?"
 GUILD_WELCOME = (
