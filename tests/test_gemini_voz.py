@@ -200,7 +200,7 @@ def test_resposta_chega_aos_pedacos_e_e_repassada_na_hora(sessao):
     assert [f.name for f in ferramenta.function_declarations] == [
         gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER, gemini._HORA_EM, gemini._SOBRE_A_DATA, gemini._CALCULAR, gemini._NA_CALL,
         gemini._MEUS_LEMBRETES, gemini._CANCELA_LEMBRETES,
-        gemini._ENQUETE, gemini._CRONOMETRO, gemini._ANOTAR, gemini._MINHAS_NOTAS, gemini._APAGAR_NOTAS, gemini._TIMES, gemini._LEMBRETE,
+        gemini._ENQUETE, gemini._CRONOMETRO, gemini._PLACAR, gemini._ANOTAR, gemini._MINHAS_NOTAS, gemini._APAGAR_NOTAS, gemini._TIMES, gemini._LEMBRETE,
     ]
     assert not resposta.quer_sair
     # a pergunta vai marcada: início, áudio 16 kHz, fim
@@ -522,6 +522,41 @@ def test_times_com_quantidade_estranha_nao_quebram(sessao):
 
     [(_, kw)] = [e for e in sessao.enviado if e[0] == "ferramenta"]
     assert "erro" in kw["function_responses"][0].response
+
+
+def test_placar_soma_ordena_e_zera(monkeypatch):
+    monkeypatch.setattr(gemini, "_placares", {})
+
+    gemini.placar(1, {"acao": "somar", "nome": "Pedro"})
+    gemini.placar(1, {"acao": "somar", "nome": "Ana", "pontos": 3})
+    gemini.placar(1, {"acao": "somar", "nome": "pedro", "pontos": 1})  # a mesma pessoa
+    gemini.placar(2, {"acao": "somar", "nome": "Outro servidor"})
+    assert gemini.placar(1, {"acao": "somar", "nome": "Ana", "pontos": -1}) == {"placar": {"Ana": 2, "Pedro": 2}}
+    assert list(gemini.placar(1, {"acao": "ver"})["placar"]) == ["Ana", "Pedro"]
+
+    assert gemini.placar(1, {"acao": "zerar"}) == {"resultado": "placar zerado"}
+    assert gemini.placar(1, {"acao": "ver"}) == {"placar": {}}
+    assert gemini.placar(2, {"acao": "ver"}) == {"placar": {"Outro servidor": 1}}
+
+
+def test_placar_com_argumentos_ruins(monkeypatch):
+    monkeypatch.setattr(gemini, "_placares", {})
+    assert "erro" in gemini.placar(1, {"acao": "somar"})
+    assert "erro" in gemini.placar(1, {"acao": "somar", "nome": "Ana", "pontos": "muitos"})
+    assert "erro" in gemini.placar(1, {"acao": "dobrar"})
+    assert "erro" in gemini.placar(1, None)
+
+
+def test_placar_pela_sessao(sessao, monkeypatch):
+    monkeypatch.setattr(gemini, "_placares", {})
+    sessao.mensagens = [
+        _chama_ferramenta(gemini._PLACAR, {"acao": "somar", "nome": "Time azul", "pontos": 3}),
+        _msg(falou="Três pro azul!"), _msg(fim=True),
+    ]
+
+    asyncio.run(gemini.responde(14, UM_SEGUNDO))
+
+    assert gemini._placares[14] == {"Time azul": 3}
 
 
 def test_le_lembrete_arredonda_e_corta_o_texto():

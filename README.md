@@ -64,6 +64,8 @@ também aparece escrita no chat.
   cai 15 de novembro?"*.
 - **Contas certas:** *"Jarvis, quanto é 15% de 1.250?"*, *"raiz de 2 vezes 7"*.
   A conta sai de uma calculadora, não da cabeça da IA (que erra).
+- **Placar:** *"Jarvis, ponto pro Pedro"*, *"três pontos pro time azul"*, *"qual o
+  placar?"*, *"zera o placar"*. Um por servidor.
 - **Cronômetro:** *"Jarvis, inicia o cronômetro"*, *"quanto tempo deu?"*,
   *"para o cronômetro"*. Um por servidor.
 - **Enquetes:** *"Jarvis, faz uma enquete: pizza, hambúrguer ou japonês?"*. Vai

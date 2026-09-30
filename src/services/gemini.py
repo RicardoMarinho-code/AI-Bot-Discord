@@ -120,6 +120,9 @@ _ANOTAR = "anotar"
 # "inicia o cronômetro", "quanto tempo deu?": um por servidor, para a call toda
 _CRONOMETRO = "cronometro"
 _cronometros: dict[int, float] = {}  # guild_id → time.monotonic() do início
+# "ponto pro Pedro", "qual o placar?": um por servidor, de pessoas ou de times
+_PLACAR = "placar"
+_placares: dict[int, dict[str, int]] = {}  # guild_id → nome → pontos
 _MINHAS_NOTAS = "minhas_notas"
 _APAGAR_NOTAS = "apagar_minhas_notas"
 # o modelo erra conta de cabeça: "quanto é 15% de 80?" vai para a calculadora
@@ -244,7 +247,8 @@ def _instrucao(quem: str = "") -> str:
         f" cancelá-los, {_CANCELA_LEMBRETES}."
         f" Para votações no grupo (\"faz uma enquete\"), use {_ENQUETE}: ela vai para o"
         " chat com reações para votar."
-        f" Para cronometrar (\"inicia o cronômetro\", \"quanto tempo deu?\"), use {_CRONOMETRO}."
+        f" Para cronometrar (\"inicia o cronômetro\", \"quanto tempo deu?\"), use {_CRONOMETRO};"
+        f" para marcar pontos de um jogo (\"ponto pro Pedro\", \"qual o placar?\"), {_PLACAR}."
         f" Quem fala tem um bloco de notas: {_ANOTAR} (\"anota: ...\"), {_MINHAS_NOTAS}"
         f" e {_APAGAR_NOTAS}; as notas também aparecem no /notas."
         f"\n\nAgora é {descreve_agora(agora())} (horário de {config.FUSO})."
@@ -316,6 +320,31 @@ def cronometro(guild_id: int, acao: str) -> dict:
         del _cronometros[guild_id]
     decorrido = time.monotonic() - inicio
     return {"parado": acao == "parar", "tempo": duracao_falada(decorrido), "segundos": round(decorrido, 1)}
+
+
+def placar(guild_id: int, args: dict | None) -> dict:
+    """somar pontos a alguém (negativo tira), ver ou zerar o placar do servidor."""
+    args = args or {}
+    acao = str(args.get("acao", "")).strip().lower()
+    pontos = _placares.setdefault(guild_id, {})
+    if acao == "zerar":
+        _placares.pop(guild_id, None)
+        return {"resultado": "placar zerado"}
+    if acao == "somar":
+        nome = " ".join(str(args.get("nome") or "").split())[:40]
+        if not nome:
+            return {"erro": "de quem é o ponto?"}
+        try:
+            quanto = int(args.get("pontos", 1))
+        except (TypeError, ValueError):
+            return {"erro": "pontos inválidos"}
+        # "ponto pro pedro" e "ponto pro Pedro" são a mesma pessoa
+        nome = next((n for n in pontos if n.lower() == nome.lower()), nome)
+        pontos[nome] = pontos.get(nome, 0) + quanto
+    elif acao != "ver":
+        return {"erro": f"ação desconhecida: {acao} (use somar, ver ou zerar)"}
+    # do maior para o menor; no empate, em ordem alfabética
+    return {"placar": dict(sorted(pontos.items(), key=lambda item: (-item[1], item[0].lower())))}
 
 
 def bloco_de_notas(nome: str, args: dict | None, guild_id: int, user_id: int) -> dict:
@@ -482,6 +511,18 @@ def _ferramentas() -> list:
                     "acao": types.Schema(
                         type=types.Type.STRING, enum=["iniciar", "ver", "parar"], description="o que fazer",
                     ),
+                }, required=["acao"]),
+            ),
+            types.FunctionDeclaration(
+                name=_PLACAR,
+                description=(
+                    "O placar do jogo na call: somar pontos a uma pessoa ou time (pontos"
+                    " negativos tiram), ver o placar (do maior para o menor) ou zerar."
+                ),
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "acao": types.Schema(type=types.Type.STRING, enum=["somar", "ver", "zerar"]),
+                    "nome": types.Schema(type=types.Type.STRING, description="quem ganha os pontos (somar)"),
+                    "pontos": types.Schema(type=types.Type.INTEGER, description="quantos (padrão 1)"),
                 }, required=["acao"]),
             ),
             types.FunctionDeclaration(
@@ -746,6 +787,8 @@ async def responde(
                             retorno = meus_lembretes(guild_id, user_id)
                         elif chamada.name == _CANCELA_LEMBRETES:
                             retorno = {"cancelados": lembretes.cancela(guild_id, user_id)}
+                        elif chamada.name == _PLACAR:
+                            retorno = placar(guild_id, chamada.args)
                         elif chamada.name == _CRONOMETRO:
                             retorno = cronometro(guild_id, str((chamada.args or {}).get("acao", "")))
                         elif chamada.name in (_ANOTAR, _MINHAS_NOTAS, _APAGAR_NOTAS):
