@@ -114,6 +114,9 @@ _MEUS_LEMBRETES = "meus_lembretes"
 _CANCELA_LEMBRETES = "cancelar_meus_lembretes"
 # "anota: comprar pão", "o que eu anotei?": bloco de notas de quem fala
 _ANOTAR = "anotar"
+# "inicia o cronômetro", "quanto tempo deu?": um por servidor, para a call toda
+_CRONOMETRO = "cronometro"
+_cronometros: dict[int, float] = {}  # guild_id → time.monotonic() do início
 _MINHAS_NOTAS = "minhas_notas"
 _APAGAR_NOTAS = "apagar_minhas_notas"
 # o modelo erra conta de cabeça: "quanto é 15% de 80?" vai para a calculadora
@@ -237,6 +240,7 @@ def _instrucao(quem: str = "") -> str:
         f" cancelá-los, {_CANCELA_LEMBRETES}."
         f" Para votações no grupo (\"faz uma enquete\"), use {_ENQUETE}: ela vai para o"
         " chat com reações para votar."
+        f" Para cronometrar (\"inicia o cronômetro\", \"quanto tempo deu?\"), use {_CRONOMETRO}."
         f" Quem fala tem um bloco de notas: {_ANOTAR} (\"anota: ...\"), {_MINHAS_NOTAS}"
         f" e {_APAGAR_NOTAS}; as notas também aparecem no /notas."
         f"\n\nAgora é {descreve_agora(agora())} (horário de {config.FUSO})."
@@ -266,6 +270,35 @@ def le_lembrete(args: dict | None) -> tuple[int, str]:
     if not _LEMBRETE_MIN_S <= segundos <= _LEMBRETE_MAX_S:
         raise ValueError(f"o lembrete precisa ser de {_LEMBRETE_MIN_S}s a 24h")
     return segundos, str(args.get("texto") or "").strip()[:200]
+
+
+def duracao_falada(segundos: float) -> str:
+    """125 → "2min05s"; 3725 → "1h02min05s": do jeito que dá para ler em voz alta."""
+    total = int(segundos)
+    horas, resto = divmod(total, 3600)
+    minutos, segs = divmod(resto, 60)
+    if horas:
+        return f"{horas}h{minutos:02d}min{segs:02d}s"
+    if minutos:
+        return f"{minutos}min{segs:02d}s"
+    return f"{segs}s"
+
+
+def cronometro(guild_id: int, acao: str) -> dict:
+    """iniciar (zera se já rodava), ver ou parar o cronômetro do servidor."""
+    acao = acao.strip().lower()
+    inicio = _cronometros.get(guild_id)
+    if acao == "iniciar":
+        _cronometros[guild_id] = time.monotonic()
+        return {"resultado": "cronômetro iniciado" + (" (o anterior foi zerado)" if inicio else "")}
+    if acao not in ("ver", "parar"):
+        return {"erro": f"ação desconhecida: {acao} (use iniciar, ver ou parar)"}
+    if inicio is None:
+        return {"erro": "não há cronômetro rodando neste servidor"}
+    if acao == "parar":
+        del _cronometros[guild_id]
+    decorrido = time.monotonic() - inicio
+    return {"parado": acao == "parar", "tempo": duracao_falada(decorrido), "segundos": round(decorrido, 1)}
 
 
 def bloco_de_notas(nome: str, args: dict | None, guild_id: int, user_id: int) -> dict:
@@ -421,6 +454,18 @@ def _ferramentas() -> list:
                         description='ex.: ["pizza", "hambúrguer", "japonês"]',
                     ),
                 }, required=["pergunta", "opcoes"]),
+            ),
+            types.FunctionDeclaration(
+                name=_CRONOMETRO,
+                description=(
+                    "O cronômetro da call: iniciar (zera se já estava rodando), ver quanto"
+                    " tempo passou ou parar (e dizer o tempo final)."
+                ),
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "acao": types.Schema(
+                        type=types.Type.STRING, enum=["iniciar", "ver", "parar"], description="o que fazer",
+                    ),
+                }, required=["acao"]),
             ),
             types.FunctionDeclaration(
                 name=_ANOTAR,
@@ -661,6 +706,8 @@ async def responde(
                             retorno = meus_lembretes(guild_id, user_id)
                         elif chamada.name == _CANCELA_LEMBRETES:
                             retorno = {"cancelados": lembretes.cancela(guild_id, user_id)}
+                        elif chamada.name == _CRONOMETRO:
+                            retorno = cronometro(guild_id, str((chamada.args or {}).get("acao", "")))
                         elif chamada.name in (_ANOTAR, _MINHAS_NOTAS, _APAGAR_NOTAS):
                             retorno = bloco_de_notas(chamada.name, chamada.args, guild_id, user_id)
                         else:

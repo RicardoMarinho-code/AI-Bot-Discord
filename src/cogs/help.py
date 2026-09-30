@@ -33,6 +33,7 @@ _SECTIONS = [
             '🕒 Hora e datas: *"que horas são em Tóquio?"*, *"quantos dias faltam pro Natal?"*\n'
             '🎲 Sorteios: *"joga um dado"*, *"cara ou coroa?"*, *"sorteia alguém da call"*\n'
             '📊 Enquetes no chat: *"faz uma enquete: pizza ou hambúrguer?"*\n'
+            '⏱️ Cronômetro: *"inicia o cronômetro"*, *"quanto tempo deu?"*\n'
             '👥 *"Quem tá na call?"*'
         ),
     ),

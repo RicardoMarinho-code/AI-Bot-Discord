@@ -200,7 +200,7 @@ def test_resposta_chega_aos_pedacos_e_e_repassada_na_hora(sessao):
     assert [f.name for f in ferramenta.function_declarations] == [
         gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER, gemini._HORA_EM, gemini._SOBRE_A_DATA, gemini._CALCULAR, gemini._NA_CALL,
         gemini._MEUS_LEMBRETES, gemini._CANCELA_LEMBRETES,
-        gemini._ENQUETE, gemini._ANOTAR, gemini._MINHAS_NOTAS, gemini._APAGAR_NOTAS, gemini._LEMBRETE,
+        gemini._ENQUETE, gemini._CRONOMETRO, gemini._ANOTAR, gemini._MINHAS_NOTAS, gemini._APAGAR_NOTAS, gemini._LEMBRETE,
     ]
     assert not resposta.quer_sair
     # a pergunta vai marcada: início, áudio 16 kHz, fim
@@ -439,6 +439,44 @@ def test_enquete_sem_permissao_de_reagir_nao_derruba_a_conversa(monkeypatch):
     _conversa(escuta)  # não levanta
 
     assert escuta.text_channel.send.await_count >= 1
+
+
+@pytest.mark.parametrize(("segundos", "texto"), [(7.9, "7s"), (125, "2min05s"), (3725, "1h02min05s")])
+def test_duracao_falada(segundos, texto):
+    assert gemini.duracao_falada(segundos) == texto
+
+
+def test_cronometro_inicia_ve_e_para(monkeypatch):
+    relogio = [1000.0]
+    monkeypatch.setattr(gemini.time, "monotonic", lambda: relogio[0])
+    monkeypatch.setattr(gemini, "_cronometros", {})
+
+    assert "erro" in gemini.cronometro(1, "ver")  # nada rodando
+    assert gemini.cronometro(1, "iniciar") == {"resultado": "cronômetro iniciado"}
+    relogio[0] += 125
+    assert gemini.cronometro(1, "ver") == {"parado": False, "tempo": "2min05s", "segundos": 125.0}
+    assert "erro" in gemini.cronometro(2, "ver")  # cada servidor tem o seu
+    relogio[0] += 10
+    assert gemini.cronometro(1, "parar")["tempo"] == "2min15s"
+    assert "erro" in gemini.cronometro(1, "parar")
+
+
+def test_cronometro_reiniciar_zera_e_acao_invalida(monkeypatch):
+    monkeypatch.setattr(gemini, "_cronometros", {})
+    gemini.cronometro(1, "iniciar")
+    assert "zerado" in gemini.cronometro(1, " Iniciar ")["resultado"]
+    assert "erro" in gemini.cronometro(1, "pausar")
+
+
+def test_cronometro_pela_sessao(sessao, monkeypatch):
+    monkeypatch.setattr(gemini, "_cronometros", {})
+    sessao.mensagens = [
+        _chama_ferramenta(gemini._CRONOMETRO, {"acao": "iniciar"}), _msg(falou="Valendo!"), _msg(fim=True),
+    ]
+
+    asyncio.run(gemini.responde(12, UM_SEGUNDO))
+
+    assert 12 in gemini._cronometros
 
 
 def test_le_lembrete_arredonda_e_corta_o_texto():

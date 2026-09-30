@@ -64,6 +64,8 @@ também aparece escrita no chat.
   cai 15 de novembro?"*.
 - **Contas certas:** *"Jarvis, quanto é 15% de 1.250?"*, *"raiz de 2 vezes 7"*.
   A conta sai de uma calculadora, não da cabeça da IA (que erra).
+- **Cronômetro:** *"Jarvis, inicia o cronômetro"*, *"quanto tempo deu?"*,
+  *"para o cronômetro"*. Um por servidor.
 - **Enquetes:** *"Jarvis, faz uma enquete: pizza, hambúrguer ou japonês?"*. Vai
   para o chat com uma reação numerada por opção (o bot precisa poder reagir).
 - **Anotações:** *"Jarvis, anota: comprar pão"*, *"o que eu anotei?"*,
