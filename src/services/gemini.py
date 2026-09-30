@@ -14,7 +14,9 @@ assim que chega (`ao_falar`): medido em 27/09, a de "o que é gastrite?" levou
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import random
 import time
 from collections import deque
@@ -83,8 +85,10 @@ VOZES = {
     "Despina": "feminina, suave",
     "Erinome": "feminina, nítida",
 }
-# a voz escolhida no /voz, por servidor — some ao reiniciar (a fixa é GEMINI_VOZ)
+# a voz escolhida no /voz, por servidor; guardada em arquivo para valer depois
+# de um reinício (sem escolha, vale a do .env: GEMINI_VOZ)
 _voz_do_servidor: dict[int, str] = {}
+_ARQUIVO_VOZES = os.path.join("data", "vozes.json")
 
 # o jeito de o Gemini tirar o bot da call quando o mandam embora com palavras
 # que a lista de core/intents não prevê
@@ -354,10 +358,35 @@ def escolhe_voz(guild_id: int, voz: str | None) -> None:
     """A voz do bot neste servidor; None volta para a do .env."""
     if voz is None:
         _voz_do_servidor.pop(guild_id, None)
-        return
-    if voz not in VOZES:
+    elif voz not in VOZES:
         raise ValueError(f"voz desconhecida: {voz}")
-    _voz_do_servidor[guild_id] = voz
+    else:
+        _voz_do_servidor[guild_id] = voz
+    _salva_vozes()
+
+
+def _salva_vozes() -> None:
+    try:
+        os.makedirs(os.path.dirname(_ARQUIVO_VOZES), exist_ok=True)
+        temporario = _ARQUIVO_VOZES + ".tmp"
+        with open(temporario, "w", encoding="utf-8") as f:
+            json.dump({str(g): v for g, v in _voz_do_servidor.items()}, f)
+        os.replace(temporario, _ARQUIVO_VOZES)
+    except OSError:
+        log.warning("🎙️ não consegui salvar as vozes do /voz", exc_info=True)
+
+
+def carrega_vozes() -> None:
+    """No boot: as vozes que cada servidor escolheu no /voz."""
+    try:
+        with open(_ARQUIVO_VOZES, encoding="utf-8") as f:
+            salvas = json.load(f)
+        # uma voz que saiu da lista (o Google tirou) volta para a do .env
+        _voz_do_servidor.update({int(g): v for g, v in salvas.items() if v in VOZES})
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError, TypeError, AttributeError):
+        log.warning("🎙️ o arquivo de vozes está estragado — ignorando", exc_info=True)
 
 
 def voz_de(guild_id: int) -> str:

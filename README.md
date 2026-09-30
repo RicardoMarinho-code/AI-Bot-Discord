@@ -25,7 +25,7 @@ também aparece escrita no chat.
 | `/entrar` | Entra no canal de voz em que você está e fica ouvindo |
 | `/sair` | Sai da call (ou peça por voz: *"Jarvis, sai da call"*) |
 | `/lembretes` | Mostra os seus lembretes pendentes (com `cancelar`, apaga todos) |
-| `/voz` | Troca a voz do bot neste servidor, na hora (até reiniciar; a fixa é o `GEMINI_VOZ`) |
+| `/voz` | Troca a voz do bot neste servidor, na hora (fica salva em `data/vozes.json`) |
 | `/ajuda` | O guia, dentro do Discord |
 
 ## Como usar na call

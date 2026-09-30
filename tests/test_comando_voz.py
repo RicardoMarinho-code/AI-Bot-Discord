@@ -87,3 +87,26 @@ def test_sem_lembretes_ensina_a_pedir():
     _com_lembretes(lambda: Voice.lembretes.callback(Voice(MagicMock()), ctx, False))
 
     ctx.respond.assert_awaited_once_with(m.REMINDERS_NONE, ephemeral=True)
+
+
+def test_voz_escolhida_volta_depois_de_reiniciar(monkeypatch):
+    gemini.escolhe_voz(42, "Orus")
+    gemini.escolhe_voz(43, "Kore")
+    gemini.escolhe_voz(43, None)
+    monkeypatch.setattr(gemini, "_voz_do_servidor", {})  # o bot reiniciou
+
+    gemini.carrega_vozes()
+
+    assert gemini._voz_do_servidor == {42: "Orus"}
+
+
+def test_voz_que_saiu_da_lista_e_arquivo_estragado_nao_quebram(monkeypatch):
+    monkeypatch.setattr(gemini, "_voz_do_servidor", {})
+    with open(gemini._ARQUIVO_VOZES, "w", encoding="utf-8") as f:
+        f.write('{"42": "VozQueSumiu", "44": "Charon"}')
+    gemini.carrega_vozes()
+    assert gemini._voz_do_servidor == {44: "Charon"}
+
+    with open(gemini._ARQUIVO_VOZES, "w", encoding="utf-8") as f:
+        f.write("[1, 2")
+    gemini.carrega_vozes()  # só loga

@@ -83,6 +83,7 @@ def main() -> None:
         from services import gemini, speech
 
         bot._restaura = asyncio.create_task(lembretes.restaura(bot))  # os de antes do reinício
+        gemini.carrega_vozes()  # as do /voz
         loop = asyncio.get_running_loop()
         loop.run_in_executor(None, gemini.aquece)
         if speech.detector_ligado():
