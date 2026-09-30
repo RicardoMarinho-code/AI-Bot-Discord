@@ -58,7 +58,8 @@ também aparece escrita no chat.
 - **Quem está na call:** *"Jarvis, quem tá aqui?"*, *"sorteia alguém da call
   pra começar"*.
 - **Lembretes:** *"Jarvis, me avisa em 10 minutos pra tirar a pizza"*. Na hora,
-  o bot marca você no chat (até 24 horas; reiniciar o bot apaga os pendentes).
+  o bot marca você no chat (até 24 horas). Os pendentes ficam salvos em
+  `data/lembretes.json` e voltam se o bot reiniciar.
 - Se todo mundo sair da call, ele sai sozinho depois de 2 minutos.
 
 O bot só conversa: não toca música, não manda recado para os outros e não mexe no Discord —

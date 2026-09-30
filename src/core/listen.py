@@ -25,7 +25,7 @@ from discord.sinks import Sink
 
 import config
 import messages as m
-from core import audio
+from core import audio, lembretes
 from core.intents import chamou_de_frente, first_word, is_stt_noise, parse_command
 from services import gemini, speech
 
@@ -34,36 +34,6 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-
-
-@dataclass
-class Lembrete:
-    guild_id: int
-    user_id: int
-    texto: str
-    vence_em: float  # time.time(): o /lembretes mostra como "daqui a X" do Discord
-
-
-# os lembretes pendentes: referência forte (o asyncio só guarda uma fraca) e
-# fora da escuta, para o aviso chegar mesmo se o bot sair da call antes
-_lembretes: dict[asyncio.Task, Lembrete] = {}
-
-
-def lembretes_de(guild_id: int, user_id: int) -> list[Lembrete]:
-    """Os lembretes pendentes de alguém num servidor, do mais próximo ao mais longe."""
-    return sorted(
-        (lem for lem in _lembretes.values() if lem.guild_id == guild_id and lem.user_id == user_id),
-        key=lambda lem: lem.vence_em,
-    )
-
-
-def cancela_lembretes(guild_id: int, user_id: int) -> int:
-    """Cancela os lembretes pendentes de alguém; devolve quantos eram."""
-    tarefas = [t for t, lem in _lembretes.items() if lem.guild_id == guild_id and lem.user_id == user_id]
-    for tarefa in tarefas:
-        tarefa.cancel()
-        _lembretes.pop(tarefa, None)  # já, sem esperar o callback: o /lembretes logo depois não o vê
-    return len(tarefas)
 
 BYTES_PER_SECOND = 192_000  # 48kHz * 2 canais * 2 bytes
 MIN_SPEECH_S = 0.4
@@ -913,22 +883,13 @@ class VoiceListener:
 
     def _agenda_lembrete(self, user_id: int, segundos: float, texto: str) -> None:
         """"Jarvis, me avisa em 10 minutos": daqui a `segundos`, marca a pessoa no chat."""
-        canal = self.text_channel
-
-        async def avisa() -> None:
-            await asyncio.sleep(segundos)
-            try:
-                await canal.send(m.REMINDER.format(
-                    mencao=f"<@{user_id}>", texto=texto or m.REMINDER_SEM_TEXTO,
-                ))
-            except Exception:  # um aviso perdido não derruba nada
-                log.warning("⏰ [%s] não consegui mandar o lembrete", user_id, exc_info=True)
-
-        tarefa = asyncio.create_task(avisa())
-        _lembretes[tarefa] = Lembrete(
-            self.assistente.guild.id, user_id, texto or m.REMINDER_SEM_TEXTO, time.time() + segundos,
-        )
-        tarefa.add_done_callback(lambda t: _lembretes.pop(t, None))
+        lembretes.agenda(self.text_channel, lembretes.Lembrete(
+            guild_id=self.assistente.guild.id,
+            user_id=user_id,
+            channel_id=int(getattr(self.text_channel, "id", 0) or 0),
+            texto=texto or m.REMINDER_SEM_TEXTO,
+            vence_em=time.time() + segundos,
+        ))
         log.info("⏰ [%s] lembrete agendado para daqui a %ds", user_id, segundos)
 
     # --- sair ---

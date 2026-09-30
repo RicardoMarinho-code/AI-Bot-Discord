@@ -8,8 +8,9 @@ import discord
 from discord.ext import commands
 
 import messages as m
+from core import lembretes as lembretes_salvos
 from core.assistente import entra_na_call, peek_assistente
-from core.listen import VoiceListener, cancela_lembretes, lembretes_de
+from core.listen import VoiceListener
 from services import gemini
 
 log = logging.getLogger(__name__)
@@ -92,10 +93,10 @@ class Voice(commands.Cog):
     ) -> None:
         # só a pessoa vê: lembrete é coisa dela
         if cancelar:
-            n = cancela_lembretes(ctx.guild.id, ctx.author.id)
+            n = lembretes_salvos.cancela(ctx.guild.id, ctx.author.id)
             await ctx.respond(m.REMINDERS_CANCELED.format(n=n) if n else m.REMINDERS_NONE, ephemeral=True)
             return
-        pendentes = lembretes_de(ctx.guild.id, ctx.author.id)
+        pendentes = lembretes_salvos.de(ctx.guild.id, ctx.author.id)
         if not pendentes:
             await ctx.respond(m.REMINDERS_NONE, ephemeral=True)
             return

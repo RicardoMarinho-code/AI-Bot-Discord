@@ -79,8 +79,10 @@ def main() -> None:
         # aquece em background o que a primeira pergunta pagaria: o SDK do
         # Gemini, o detector do nome (é ele que faz o estalo sair na hora) e o
         # Whisper maior só quando é o motor principal (sem Groq)
+        from core import lembretes
         from services import gemini, speech
 
+        bot._restaura = asyncio.create_task(lembretes.restaura(bot))  # os de antes do reinício
         loop = asyncio.get_running_loop()
         loop.run_in_executor(None, gemini.aquece)
         if speech.detector_ligado():

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import messages as m
 from cogs.voice import _PADRAO, Voice
-from core import listen
+from core import lembretes, listen
 from services import gemini
 
 
@@ -49,9 +49,9 @@ def _com_lembretes(roda):
         try:
             await roda()
         finally:
-            for tarefa in list(listen._lembretes):
+            for tarefa in list(lembretes.pendentes):
                 tarefa.cancel()
-            listen._lembretes.clear()
+            lembretes.pendentes.clear()
 
     asyncio.run(tudo())
 
@@ -73,7 +73,7 @@ def test_lembretes_cancelar_apaga_so_os_seus():
 
     async def roda():
         await Voice.lembretes.callback(Voice(MagicMock()), ctx, True)
-        sobraram.extend(lem.texto for lem in listen._lembretes.values())
+        sobraram.extend(lem.texto for lem in lembretes.pendentes.values())
 
     _com_lembretes(roda)
 

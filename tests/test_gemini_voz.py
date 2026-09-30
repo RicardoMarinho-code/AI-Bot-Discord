@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 import config
-from core import listen
+from core import lembretes, listen
 from core.audio import FRAME_BYTES, SILENCIO, FalaAoVivo, FonteDaFala
 from core.listen import VoiceListener
 from services import gemini
@@ -604,7 +604,7 @@ def test_lembrete_marca_quem_pediu_no_chat_na_hora(monkeypatch):
 
     enviados = [c.args[0] for c in escuta.text_channel.send.await_args_list]
     assert listen.m.REMINDER.format(mencao="<@7>", texto="tirar a pizza") in enviados
-    assert not listen._lembretes  # vencido, sai da lista
+    assert not lembretes.pendentes  # vencido, sai da lista
 
 
 def test_lembrete_sem_texto_ainda_avisa(monkeypatch):
