@@ -27,6 +27,7 @@ from datetime import datetime
 import numpy as np
 
 import config
+from core import lembretes
 from core.audio import BYTES_POR_S, FRAME_BYTES
 from services import speech
 
@@ -105,6 +106,9 @@ _LEMBRETE_MIN_S = 5
 _LEMBRETE_MAX_S = 24 * 3600  # o bot reinicia de vez em quando: mais que um dia se perderia
 # "quem tá na call?", "sorteia alguém daqui": o Gemini só conhece quem fala
 _NA_CALL = "quem_esta_na_call"
+# "quais são meus lembretes?", "cancela meus lembretes": sem ir ao /lembretes
+_MEUS_LEMBRETES = "meus_lembretes"
+_CANCELA_LEMBRETES = "cancelar_meus_lembretes"
 
 
 @dataclass
@@ -175,6 +179,8 @@ def _instrucao(quem: str = "") -> str:
         f" Para lembretes e timers de quem está falando (\"me avisa em 10 minutos\"),"
         f" use a ferramenta {_LEMBRETE}: na hora, você marca a pessoa no chat."
         f" Para saber quem está na call (ou sortear alguém daqui), use {_NA_CALL}."
+        f" Se perguntarem pelos lembretes de quem fala, use {_MEUS_LEMBRETES}; para"
+        f" cancelá-los, {_CANCELA_LEMBRETES}."
         f"\n\nAgora é {descreve_agora(agora())} (horário de {config.FUSO})."
     )
     if quem:
@@ -189,6 +195,15 @@ def le_lembrete(args: dict | None) -> tuple[int, str]:
     if not _LEMBRETE_MIN_S <= segundos <= _LEMBRETE_MAX_S:
         raise ValueError(f"o lembrete precisa ser de {_LEMBRETE_MIN_S}s a 24h")
     return segundos, str(args.get("texto") or "").strip()[:200]
+
+
+def meus_lembretes(guild_id: int, user_id: int) -> dict:
+    """Os lembretes de alguém como o Gemini entende: texto e minutos que faltam."""
+    agora_s = time.time()
+    return {"lembretes": [
+        {"texto": lem.texto, "faltam_minutos": max(0, round((lem.vence_em - agora_s) / 60))}
+        for lem in lembretes.de(guild_id, user_id)
+    ]}
 
 
 def executa_ferramenta(nome: str, args: dict | None) -> dict:
@@ -259,6 +274,14 @@ def _ferramentas() -> list:
                     "Os nomes de quem está agora na call de voz com você (sem contar"
                     " você). Use para dizer quem está aqui ou sortear alguém da call."
                 ),
+            ),
+            types.FunctionDeclaration(
+                name=_MEUS_LEMBRETES,
+                description="Os lembretes pendentes de quem está falando: o texto e quantos minutos faltam.",
+            ),
+            types.FunctionDeclaration(
+                name=_CANCELA_LEMBRETES,
+                description="Cancela TODOS os lembretes pendentes de quem está falando.",
             ),
             types.FunctionDeclaration(
                 name=_LEMBRETE,
@@ -426,13 +449,15 @@ async def responde(
     quem: str = "",
     ao_falar: Callable[[bytes], None] | None = None,
     na_call: Callable[[], Awaitable[list[str]]] | None = None,
+    user_id: int = 0,
 ) -> Resposta:
     """A pergunta falada (PCM do Discord) → a resposta, falada e transcrita.
 
     `ao_falar(pcm)`: recebe cada pedaço da resposta (PCM 48 kHz estéreo) assim
     que ele chega. `quem`: o nome de quem perguntou, para o Gemini saber com
     quem fala. `na_call()`: os nomes de quem está na call — só chamada se o
-    Gemini perguntar (buscar os nomes pode ir à API do Discord).
+    Gemini perguntar (buscar os nomes pode ir à API do Discord). `user_id`: de
+    quem são os lembretes que o Gemini lista ou cancela.
     """
     from google.genai import types
 
@@ -478,6 +503,10 @@ async def responde(
                     for chamada in chamadas:
                         if chamada.name == _NA_CALL:
                             retorno = {"pessoas": await na_call() if na_call is not None else []}
+                        elif chamada.name == _MEUS_LEMBRETES:
+                            retorno = meus_lembretes(guild_id, user_id)
+                        elif chamada.name == _CANCELA_LEMBRETES:
+                            retorno = {"cancelados": lembretes.cancela(guild_id, user_id)}
                         else:
                             retorno = executa_ferramenta(chamada.name, chamada.args)
                         if chamada.name == _LEMBRETE and "erro" not in retorno:

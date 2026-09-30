@@ -61,7 +61,8 @@ também aparece escrita no chat.
   pra começar"*.
 - **Lembretes:** *"Jarvis, me avisa em 10 minutos pra tirar a pizza"*. Na hora,
   o bot marca você no chat (até 24 horas). Os pendentes ficam salvos em
-  `data/lembretes.json` e voltam se o bot reiniciar.
+  `data/lembretes.json` e voltam se o bot reiniciar. Por voz também dá para
+  perguntar *"quais são meus lembretes?"* e pedir *"cancela meus lembretes"*.
 - Se todo mundo sair da call, ele sai sozinho depois de 2 minutos.
 
 O bot só conversa: não toca música, não manda recado para os outros e não mexe no Discord —

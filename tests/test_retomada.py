@@ -104,7 +104,7 @@ def test_ainda_falando_a_pergunta_espera(monkeypatch):
 
 def test_o_bot_nao_fala_antes_da_junta(monkeypatch):
     """A resposta chega cedo, mas a fala espera: quem só respirou não é atropelado."""
-    async def responde(guild_id, pcm, *, quem="", ao_falar=None, na_call=None):
+    async def responde(guild_id, pcm, *, quem="", ao_falar=None, na_call=None, **_):
         ao_falar(b"\x00" * FRAME_BYTES)
         return gemini.Resposta(texto="São três horas.", segundos_de_fala=1.0)
 
@@ -168,7 +168,7 @@ def test_voltou_a_falar_logo_depois_retoma_e_junta_o_resto(monkeypatch):
 
 
 def test_retomar_cancela_o_pedido_que_ainda_pensa(monkeypatch):
-    async def pensa_para_sempre(guild_id, pcm, *, quem="", ao_falar=None, na_call=None):
+    async def pensa_para_sempre(guild_id, pcm, *, quem="", ao_falar=None, na_call=None, **_):
         await asyncio.sleep(10)
 
     monkeypatch.setattr(gemini, "responde", pensa_para_sempre)
@@ -335,7 +335,7 @@ def test_janela_expira_se_o_gemini_nao_responde():
 
 def test_resposta_terminada_fecha_a_janela(monkeypatch):
     """Depois da resposta, a fala nova é conversa (modo conversa, com memória)."""
-    async def responde(guild_id, pcm, *, quem="", ao_falar=None, na_call=None):
+    async def responde(guild_id, pcm, *, quem="", ao_falar=None, na_call=None, **_):
         return gemini.Resposta(texto="São três horas.", segundos_de_fala=1.0)
 
     monkeypatch.setattr(gemini, "responde", responde)
@@ -352,7 +352,7 @@ def test_resposta_terminada_fecha_a_janela(monkeypatch):
 def test_primeiro_audio_marca_quando_o_bot_comeca_a_falar(monkeypatch):
     liberar = asyncio.Event()
 
-    async def responde(guild_id, pcm, *, quem="", ao_falar=None, na_call=None):
+    async def responde(guild_id, pcm, *, quem="", ao_falar=None, na_call=None, **_):
         ao_falar(b"\x00" * FRAME_BYTES)
         await liberar.wait()
         return gemini.Resposta(texto="ok", segundos_de_fala=1.0)

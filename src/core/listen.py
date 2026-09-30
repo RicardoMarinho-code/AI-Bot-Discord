@@ -797,7 +797,7 @@ class VoiceListener:
             try:
                 resposta = await gemini.responde(
                     self.assistente.guild.id, pcm, quem=quem, ao_falar=ao_falar,
-                    na_call=self.assistente.nomes_na_call,
+                    na_call=self.assistente.nomes_na_call, user_id=user_id,
                 )
             except Exception as exc:  # noqa: BLE001 — a segunda chance decide abaixo
                 if comecou_s is not None or time.monotonic() - inicio > _SEGUNDA_CHANCE_ATE_S:
@@ -812,7 +812,7 @@ class VoiceListener:
                 gemini.esquece(self.assistente.guild.id)
                 resposta = await gemini.responde(
                     self.assistente.guild.id, pcm, quem=quem, ao_falar=ao_falar,
-                    na_call=self.assistente.nomes_na_call,
+                    na_call=self.assistente.nomes_na_call, user_id=user_id,
                 )
         except Exception as exc:  # noqa: BLE001 — pergunta perdida não derruba a escuta
             # %s e não %r: nunca arriscar a chave num repr de erro de rede
