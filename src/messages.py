@@ -51,11 +51,14 @@ STATUS = (
     "🎙️ Voz: **{voz}**\n"
     "🧠 Memória: {trocas} troca(s) da conversa\n"
     "⏰ Lembretes pendentes aqui: {lembretes}\n"
+    "{jogo}"
     "📶 Ping: {ping} ms · no ar há {no_ar}\n"
     "-# Modelo: {modelo}"
 )
 STATUS_IN_CALL = "Na call em {canal}"
 STATUS_OUT_OF_CALL = "Fora da call (use `/entrar`)"
+STATUS_STOPWATCH = "⏱️ Cronômetro rodando: {tempo}\n"
+STATUS_SCORE = "🏆 Placar: {placar}\n"
 
 # ── Geral ────────────────────────────────────────────────────────────────────
 COMMAND_ERROR = "😵 Deu um erro aqui do meu lado. Tenta de novo?"

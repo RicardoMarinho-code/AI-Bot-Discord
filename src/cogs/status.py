@@ -30,6 +30,18 @@ def ha_quanto(segundos: float) -> str:
     return f"{minutos}min"
 
 
+def _jogo(guild_id: int) -> str:
+    """As linhas do cronômetro e do placar, só se houver: sem jogo, o /status fica curto."""
+    linhas = ""
+    cronometro = gemini.cronometro(guild_id, "ver")
+    if "tempo" in cronometro:
+        linhas += m.STATUS_STOPWATCH.format(tempo=cronometro["tempo"])
+    pontos = gemini.placar(guild_id, {"acao": "ver"})["placar"]
+    if pontos:
+        linhas += m.STATUS_SCORE.format(placar=" · ".join(f"{nome} {n}" for nome, n in pontos.items())[:500])
+    return linhas
+
+
 def descreve(bot: discord.Bot, guild_id: int) -> str:
     sessao = peek_assistente(guild_id)
     if sessao is not None and sessao.conectado():
@@ -43,6 +55,7 @@ def descreve(bot: discord.Bot, guild_id: int) -> str:
         voz=f"{voz} ({gemini.VOZES[voz]})" if voz in gemini.VOZES else (voz or "a padrão do Google"),
         trocas=len(gemini._memoria(guild_id)) // 2,  # pergunta + resposta
         lembretes=pendentes,
+        jogo=_jogo(guild_id),
         ping=round(bot.latency * 1000) if bot.latency == bot.latency else "?",  # NaN antes de conectar
         no_ar=ha_quanto(time.time() - _NO_AR_DESDE),
         modelo=config.GEMINI_LIVE_MODEL,

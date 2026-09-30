@@ -48,6 +48,24 @@ def test_status_na_call_com_voz_memoria_e_lembretes(monkeypatch):
     gemini.esquece(51)
 
 
+def test_status_mostra_cronometro_e_placar_so_se_houver(monkeypatch):
+    monkeypatch.setattr(status, "peek_assistente", lambda gid: None)
+    monkeypatch.setattr(gemini, "_cronometros", {})
+    monkeypatch.setattr(gemini, "_placares", {})
+    bot = SimpleNamespace(latency=0.01)
+
+    texto = status.descreve(bot, 53)
+    assert "Cronômetro" not in texto and "Placar" not in texto
+
+    gemini.cronometro(53, "iniciar")
+    gemini.placar(53, {"acao": "somar", "nome": "Ana", "pontos": 3})
+    gemini.placar(53, {"acao": "somar", "nome": "Beto"})
+    texto = status.descreve(bot, 53)
+
+    assert "Cronômetro rodando: 0s" in texto and "Placar: Ana 3 · Beto 1" in texto
+    assert gemini.placar(53, {"acao": "ver"})["placar"] == {"Ana": 3, "Beto": 1}  # só olhou
+
+
 def test_comando_responde_so_para_quem_pediu(monkeypatch):
     monkeypatch.setattr(status, "peek_assistente", lambda gid: None)
     ctx = SimpleNamespace(guild=SimpleNamespace(id=52), respond=AsyncMock())
