@@ -109,6 +109,9 @@ ENQUETE_MAX_OPCOES = 10  # uma reação numerada por opção: 1️⃣ a 🔟
 _LEMBRETE_MAX_S = 24 * 3600  # o bot reinicia de vez em quando: mais que um dia se perderia
 # "quem tá na call?", "sorteia alguém daqui": o Gemini só conhece quem fala
 _NA_CALL = "quem_esta_na_call"
+# "divide a call em dois times": sem lista, os times saem de quem está na call
+_TIMES = "dividir_times"
+_TIMES_MAX = 10
 # "quais são meus lembretes?", "cancela meus lembretes": sem ir ao /lembretes
 _MEUS_LEMBRETES = "meus_lembretes"
 _CANCELA_LEMBRETES = "cancelar_meus_lembretes"
@@ -235,7 +238,8 @@ def _instrucao(quem: str = "") -> str:
         " resultado dela (arredondado de um jeito natural para ouvir)."
         f" Para lembretes e timers de quem está falando (\"me avisa em 10 minutos\"),"
         f" use a ferramenta {_LEMBRETE}: na hora, você marca a pessoa no chat."
-        f" Para saber quem está na call (ou sortear alguém daqui), use {_NA_CALL}."
+        f" Para saber quem está na call (ou sortear alguém daqui), use {_NA_CALL};"
+        f" para dividir o pessoal em times ou duplas, {_TIMES}."
         f" Se perguntarem pelos lembretes de quem fala, use {_MEUS_LEMBRETES}; para"
         f" cancelá-los, {_CANCELA_LEMBRETES}."
         f" Para votações no grupo (\"faz uma enquete\"), use {_ENQUETE}: ela vai para o"
@@ -270,6 +274,19 @@ def le_lembrete(args: dict | None) -> tuple[int, str]:
     if not _LEMBRETE_MIN_S <= segundos <= _LEMBRETE_MAX_S:
         raise ValueError(f"o lembrete precisa ser de {_LEMBRETE_MIN_S}s a 24h")
     return segundos, str(args.get("texto") or "").strip()[:200]
+
+
+def divide_times(pessoas: list[str], quantidade: int) -> dict:
+    """Embaralha e reparte em `quantidade` times; a diferença de tamanho é no máximo 1."""
+    pessoas = [p.strip() for p in pessoas if p and p.strip()]
+    if not 2 <= quantidade <= _TIMES_MAX:
+        return {"erro": f"dá para dividir em 2 a {_TIMES_MAX} times"}
+    if len(pessoas) < quantidade:
+        return {"erro": f"só {len(pessoas)} pessoa(s) para {quantidade} times"}
+    embaralhadas = pessoas[:]
+    _aleatorio.shuffle(embaralhadas)
+    # distribui em rodízio: 7 em 2 times = 4 e 3, nunca 5 e 2
+    return {"times": [embaralhadas[i::quantidade] for i in range(quantidade)]}
 
 
 def duracao_falada(segundos: float) -> str:
@@ -481,6 +498,20 @@ def _ferramentas() -> list:
             types.FunctionDeclaration(
                 name=_APAGAR_NOTAS,
                 description="Apaga TODAS as anotações de quem está falando.",
+            ),
+            types.FunctionDeclaration(
+                name=_TIMES,
+                description=(
+                    "Divide pessoas em times ao acaso, equilibrados no tamanho. Sem a lista"
+                    " de pessoas, usa quem está na call agora."
+                ),
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "quantidade": types.Schema(type=types.Type.INTEGER, description="quantos times (duplas: a metade das pessoas)"),
+                    "pessoas": types.Schema(
+                        type=types.Type.ARRAY, items=types.Schema(type=types.Type.STRING),
+                        description="os nomes, se a pessoa disser; vazio = quem está na call",
+                    ),
+                }, required=["quantidade"]),
             ),
             types.FunctionDeclaration(
                 name=_LEMBRETE,
@@ -702,6 +733,15 @@ async def responde(
                     for chamada in chamadas:
                         if chamada.name == _NA_CALL:
                             retorno = {"pessoas": await na_call() if na_call is not None else []}
+                        elif chamada.name == _TIMES:
+                            args = chamada.args or {}
+                            pessoas = [str(p) for p in args.get("pessoas") or []]
+                            if not pessoas and na_call is not None:
+                                pessoas = await na_call()
+                            try:
+                                retorno = divide_times(pessoas, int(args.get("quantidade", 2)))
+                            except (TypeError, ValueError):
+                                retorno = {"erro": "quantidade de times inválida"}
                         elif chamada.name == _MEUS_LEMBRETES:
                             retorno = meus_lembretes(guild_id, user_id)
                         elif chamada.name == _CANCELA_LEMBRETES:

@@ -72,6 +72,8 @@ também aparece escrita no chat.
   *"apaga minhas notas"*. Ficam salvas em `data/notas.json`; o `/notas` mostra.
 - **Quem está na call:** *"Jarvis, quem tá aqui?"*, *"sorteia alguém da call
   pra começar"*.
+- **Times:** *"Jarvis, divide a call em dois times"*, *"faz duplas com Ana, Beto,
+  Caio e Duda"*. Ao acaso e equilibrados (7 pessoas = 4 e 3).
 - **Lembretes:** *"Jarvis, me avisa em 10 minutos pra tirar a pizza"*. Na hora,
   o bot marca você no chat (até 24 horas). Os pendentes ficam salvos em
   `data/lembretes.json` e voltam se o bot reiniciar. Por voz também dá para

@@ -200,7 +200,7 @@ def test_resposta_chega_aos_pedacos_e_e_repassada_na_hora(sessao):
     assert [f.name for f in ferramenta.function_declarations] == [
         gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER, gemini._HORA_EM, gemini._SOBRE_A_DATA, gemini._CALCULAR, gemini._NA_CALL,
         gemini._MEUS_LEMBRETES, gemini._CANCELA_LEMBRETES,
-        gemini._ENQUETE, gemini._CRONOMETRO, gemini._ANOTAR, gemini._MINHAS_NOTAS, gemini._APAGAR_NOTAS, gemini._LEMBRETE,
+        gemini._ENQUETE, gemini._CRONOMETRO, gemini._ANOTAR, gemini._MINHAS_NOTAS, gemini._APAGAR_NOTAS, gemini._TIMES, gemini._LEMBRETE,
     ]
     assert not resposta.quer_sair
     # a pergunta vai marcada: início, áudio 16 kHz, fim
@@ -477,6 +477,51 @@ def test_cronometro_pela_sessao(sessao, monkeypatch):
     asyncio.run(gemini.responde(12, UM_SEGUNDO))
 
     assert 12 in gemini._cronometros
+
+
+def test_times_equilibrados_com_todo_mundo():
+    pessoas = ["Ana", "Beto", "Caio", "Duda", "Edu", "Fê", "Gui"]
+
+    times = gemini.divide_times(pessoas, 2)["times"]
+
+    assert sorted(len(t) for t in times) == [3, 4]
+    assert sorted([p for time in times for p in time]) == sorted(pessoas)
+
+
+def test_times_mudam_de_uma_vez_para_outra():
+    pessoas = [str(i) for i in range(10)]
+    assert len({str(gemini.divide_times(pessoas, 2)["times"]) for _ in range(20)}) > 1
+
+
+def test_times_impossiveis():
+    assert "erro" in gemini.divide_times(["Ana"], 2)
+    assert "erro" in gemini.divide_times(["Ana", "Beto"], 1)
+    assert "erro" in gemini.divide_times(["Ana", " ", ""], 2)
+
+
+def test_times_sem_lista_usam_quem_esta_na_call(sessao):
+    async def na_call():
+        return ["Ana", "Beto", "Caio", "Duda"]
+
+    sessao.mensagens = [
+        _chama_ferramenta(gemini._TIMES, {"quantidade": 2}), _msg(falou="Times prontos!"), _msg(fim=True),
+    ]
+    asyncio.run(gemini.responde(13, UM_SEGUNDO, na_call=na_call))
+
+    [(_, kw)] = [e for e in sessao.enviado if e[0] == "ferramenta"]
+    times = kw["function_responses"][0].response["times"]
+    assert sorted([p for time in times for p in time]) == ["Ana", "Beto", "Caio", "Duda"] and [len(t) for t in times] == [2, 2]
+
+
+def test_times_com_quantidade_estranha_nao_quebram(sessao):
+    sessao.mensagens = [
+        _chama_ferramenta(gemini._TIMES, {"quantidade": "dois", "pessoas": ["a", "b"]}),
+        _msg(falou="Hum."), _msg(fim=True),
+    ]
+    asyncio.run(gemini.responde(13, UM_SEGUNDO))
+
+    [(_, kw)] = [e for e in sessao.enviado if e[0] == "ferramenta"]
+    assert "erro" in kw["function_responses"][0].response
 
 
 def test_le_lembrete_arredonda_e_corta_o_texto():
