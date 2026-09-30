@@ -24,6 +24,7 @@ também aparece escrita no chat.
 | --- | --- |
 | `/entrar` | Entra no canal de voz em que você está e fica ouvindo |
 | `/sair` | Sai da call (ou peça por voz: *"Jarvis, sai da call"*) |
+| `/notas` | Mostra as suas anotações feitas por voz (com `apagar`, apaga todas) |
 | `/esquecer` | Apaga a memória da conversa neste servidor, na hora |
 | `/lembretes` | Mostra os seus lembretes pendentes (com `cancelar`, apaga todos) |
 | `/voz` | Troca a voz do bot neste servidor, na hora (fica salva em `data/vozes.json`) |
@@ -63,6 +64,8 @@ também aparece escrita no chat.
   cai 15 de novembro?"*.
 - **Contas certas:** *"Jarvis, quanto é 15% de 1.250?"*, *"raiz de 2 vezes 7"*.
   A conta sai de uma calculadora, não da cabeça da IA (que erra).
+- **Anotações:** *"Jarvis, anota: comprar pão"*, *"o que eu anotei?"*,
+  *"apaga minhas notas"*. Ficam salvas em `data/notas.json`; o `/notas` mostra.
 - **Quem está na call:** *"Jarvis, quem tá aqui?"*, *"sorteia alguém da call
   pra começar"*.
 - **Lembretes:** *"Jarvis, me avisa em 10 minutos pra tirar a pizza"*. Na hora,

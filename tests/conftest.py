@@ -16,9 +16,11 @@ os.environ["GEMINI_VOZ"] = ""
 
 @pytest.fixture(autouse=True)
 def _dados_num_arquivo_temporario(tmp_path, monkeypatch):
-    """Lembretes e vozes vão para data/: nos testes, para arquivos de mentira."""
-    from core import lembretes
+    """Lembretes, vozes e notas vão para data/: nos testes, para arquivos de mentira."""
+    from core import lembretes, notas
     from services import gemini
 
     monkeypatch.setattr(lembretes, "_ARQUIVO", str(tmp_path / "lembretes.json"))
     monkeypatch.setattr(gemini, "_ARQUIVO_VOZES", str(tmp_path / "vozes.json"))
+    monkeypatch.setattr(notas, "_ARQUIVO", str(tmp_path / "notas.json"))
+    monkeypatch.setattr(notas, "_notas", None)

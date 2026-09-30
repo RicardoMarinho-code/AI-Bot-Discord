@@ -199,7 +199,8 @@ def test_resposta_chega_aos_pedacos_e_e_repassada_na_hora(sessao):
     assert busca.google_search is not None
     assert [f.name for f in ferramenta.function_declarations] == [
         gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER, gemini._HORA_EM, gemini._SOBRE_A_DATA, gemini._CALCULAR, gemini._NA_CALL,
-        gemini._MEUS_LEMBRETES, gemini._CANCELA_LEMBRETES, gemini._LEMBRETE,
+        gemini._MEUS_LEMBRETES, gemini._CANCELA_LEMBRETES,
+        gemini._ANOTAR, gemini._MINHAS_NOTAS, gemini._APAGAR_NOTAS, gemini._LEMBRETE,
     ]
     assert not resposta.quer_sair
     # a pergunta vai marcada: início, áudio 16 kHz, fim

@@ -37,6 +37,11 @@ REMINDERS_LIST = "⏰ **Seus lembretes:**\n{lista}"
 REMINDERS_ITEM = "• **{texto}**, <t:{quando}:R>"
 REMINDERS_CANCELED = "🗑️ Cancelei {n} lembrete(s)."
 
+# ── /notas ───────────────────────────────────────────────────────────────────
+NOTES_NONE = f'Você não tem anotações. Pede uma: **"{NOME}, anota: comprar pão"** 📝'
+NOTES_LIST = "📝 **Suas anotações:**\n{lista}"
+NOTES_DELETED = "🗑️ Apaguei {n} anotação(ões)."
+
 # ── /status ──────────────────────────────────────────────────────────────────
 STATUS = (
     "📊 **Status**\n"

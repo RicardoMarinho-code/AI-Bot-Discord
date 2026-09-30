@@ -27,7 +27,7 @@ from datetime import date, datetime, timedelta
 import numpy as np
 
 import config
-from core import lembretes
+from core import lembretes, notas
 from core.audio import BYTES_POR_S, FRAME_BYTES
 from services import calculadora, speech
 
@@ -109,6 +109,10 @@ _NA_CALL = "quem_esta_na_call"
 # "quais são meus lembretes?", "cancela meus lembretes": sem ir ao /lembretes
 _MEUS_LEMBRETES = "meus_lembretes"
 _CANCELA_LEMBRETES = "cancelar_meus_lembretes"
+# "anota: comprar pão", "o que eu anotei?": bloco de notas de quem fala
+_ANOTAR = "anotar"
+_MINHAS_NOTAS = "minhas_notas"
+_APAGAR_NOTAS = "apagar_minhas_notas"
 # o modelo erra conta de cabeça: "quanto é 15% de 80?" vai para a calculadora
 _CALCULAR = "calcular"
 # "que horas são em Tóquio?": conversão de fuso de cabeça erra o horário de verão
@@ -226,6 +230,8 @@ def _instrucao(quem: str = "") -> str:
         f" Para saber quem está na call (ou sortear alguém daqui), use {_NA_CALL}."
         f" Se perguntarem pelos lembretes de quem fala, use {_MEUS_LEMBRETES}; para"
         f" cancelá-los, {_CANCELA_LEMBRETES}."
+        f" Quem fala tem um bloco de notas: {_ANOTAR} (\"anota: ...\"), {_MINHAS_NOTAS}"
+        f" e {_APAGAR_NOTAS}; as notas também aparecem no /notas."
         f"\n\nAgora é {descreve_agora(agora())} (horário de {config.FUSO})."
     )
     if quem:
@@ -240,6 +246,20 @@ def le_lembrete(args: dict | None) -> tuple[int, str]:
     if not _LEMBRETE_MIN_S <= segundos <= _LEMBRETE_MAX_S:
         raise ValueError(f"o lembrete precisa ser de {_LEMBRETE_MIN_S}s a 24h")
     return segundos, str(args.get("texto") or "").strip()[:200]
+
+
+def bloco_de_notas(nome: str, args: dict | None, guild_id: int, user_id: int) -> dict:
+    """As ferramentas de anotação, sempre de quem está falando."""
+    if not user_id:  # sem saber quem fala, a nota iria para o dono errado
+        return {"erro": "não sei quem está falando"}
+    if nome == _ANOTAR:
+        try:
+            return {"resultado": "ok, anotado", "total": notas.anota(guild_id, user_id, str((args or {}).get("texto", "")))}
+        except ValueError as erro:
+            return {"erro": str(erro)}
+    if nome == _MINHAS_NOTAS:
+        return {"notas": notas.de(guild_id, user_id)}
+    return {"apagadas": notas.apaga(guild_id, user_id)}
 
 
 def meus_lembretes(guild_id: int, user_id: int) -> dict:
@@ -364,6 +384,21 @@ def _ferramentas() -> list:
             types.FunctionDeclaration(
                 name=_CANCELA_LEMBRETES,
                 description="Cancela TODOS os lembretes pendentes de quem está falando.",
+            ),
+            types.FunctionDeclaration(
+                name=_ANOTAR,
+                description="Guarda uma anotação no bloco de notas de quem está falando.",
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "texto": types.Schema(type=types.Type.STRING, description='a nota, ex.: "comprar pão"'),
+                }, required=["texto"]),
+            ),
+            types.FunctionDeclaration(
+                name=_MINHAS_NOTAS,
+                description="As anotações de quem está falando, da mais antiga à mais nova.",
+            ),
+            types.FunctionDeclaration(
+                name=_APAGAR_NOTAS,
+                description="Apaga TODAS as anotações de quem está falando.",
             ),
             types.FunctionDeclaration(
                 name=_LEMBRETE,
@@ -589,6 +624,8 @@ async def responde(
                             retorno = meus_lembretes(guild_id, user_id)
                         elif chamada.name == _CANCELA_LEMBRETES:
                             retorno = {"cancelados": lembretes.cancela(guild_id, user_id)}
+                        elif chamada.name in (_ANOTAR, _MINHAS_NOTAS, _APAGAR_NOTAS):
+                            retorno = bloco_de_notas(chamada.name, chamada.args, guild_id, user_id)
                         else:
                             retorno = executa_ferramenta(chamada.name or "", chamada.args)
                         if chamada.name == _LEMBRETE and "erro" not in retorno:
