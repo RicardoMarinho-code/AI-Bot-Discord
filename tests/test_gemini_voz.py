@@ -198,7 +198,7 @@ def test_resposta_chega_aos_pedacos_e_e_repassada_na_hora(sessao):
     [busca, ferramenta] = sessao.configs[0].tools
     assert busca.google_search is not None
     assert [f.name for f in ferramenta.function_declarations] == [
-        gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER,
+        gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER, gemini._LEMBRETE,
     ]
     assert not resposta.quer_sair
     # a pergunta vai marcada: início, áudio 16 kHz, fim
@@ -293,6 +293,39 @@ def test_ferramenta_com_argumentos_ruins_nao_quebra_a_conversa():
     assert "erro" in gemini.executa_ferramenta(gemini._ESCOLHER, {"opcoes": ["", " "]})
     assert "erro" in gemini.executa_ferramenta(gemini._SORTEAR, {"minimo": "um", "maximo": 6})
     assert "erro" in gemini.executa_ferramenta("nao_existe", None)
+
+
+def test_lembrete_pedido_por_voz_volta_na_resposta(sessao):
+    """"Jarvis, me avisa em 10 minutos pra tirar a pizza": quem chamou agenda."""
+    sessao.mensagens = [
+        _chama_ferramenta(gemini._LEMBRETE, {"segundos": 600, "texto": "tirar a pizza"}),
+        _msg(falou="Combinado, te aviso."), _msg(fim=True),
+    ]
+
+    resposta = asyncio.run(gemini.responde(8, UM_SEGUNDO))
+
+    assert resposta.lembretes == [(600, "tirar a pizza")]
+    [(_, kw)] = [e for e in sessao.enviado if e[0] == "ferramenta"]
+    assert "ok" in kw["function_responses"][0].response["resultado"]
+
+
+def test_lembrete_fora_dos_limites_volta_como_erro_para_o_gemini(sessao):
+    sessao.mensagens = [
+        _chama_ferramenta(gemini._LEMBRETE, {"segundos": 7 * 24 * 3600}),
+        _msg(falou="Não consigo lembrar por tanto tempo."), _msg(fim=True),
+    ]
+
+    resposta = asyncio.run(gemini.responde(8, UM_SEGUNDO))
+
+    assert resposta.lembretes == []
+    [(_, kw)] = [e for e in sessao.enviado if e[0] == "ferramenta"]
+    assert "erro" in kw["function_responses"][0].response
+
+
+def test_le_lembrete_arredonda_e_corta_o_texto():
+    assert gemini.le_lembrete({"segundos": "90.4", "texto": "  x" * 200}) == (90, ("  x" * 200).strip()[:200])
+    with pytest.raises(ValueError):
+        gemini.le_lembrete({"segundos": 1})
 
 
 def test_instrucao_manda_sortear_com_a_ferramenta():
@@ -496,6 +529,41 @@ def test_respostas_fora_do_chat_se_desligado(monkeypatch):
     _conversa(escuta)
 
     escuta.text_channel.send.assert_not_awaited()
+
+
+def test_lembrete_marca_quem_pediu_no_chat_na_hora(monkeypatch):
+    resposta = gemini.Resposta(
+        texto="Te aviso.", pergunta="me avisa", segundos_de_fala=1.0, lembretes=[(0.01, "tirar a pizza")],
+    )
+    _responde_com(monkeypatch, resposta)
+    escuta = _listener()
+
+    async def roda():
+        escuta._conversa_nova(7, "Jarvis, me avisa", UM_SEGUNDO)
+        await escuta._conversa
+        await asyncio.sleep(0.05)  # o lembrete vence
+
+    asyncio.run(roda())
+
+    enviados = [c.args[0] for c in escuta.text_channel.send.await_args_list]
+    assert listen.m.REMINDER.format(mencao="<@7>", texto="tirar a pizza") in enviados
+    assert not listen._lembretes  # vencido, sai da lista
+
+
+def test_lembrete_sem_texto_ainda_avisa(monkeypatch):
+    resposta = gemini.Resposta(texto="Ok.", segundos_de_fala=1.0, lembretes=[(0.01, "")])
+    _responde_com(monkeypatch, resposta)
+    escuta = _listener()
+
+    async def roda():
+        escuta._conversa_nova(7, "Jarvis, timer", UM_SEGUNDO)
+        await escuta._conversa
+        await asyncio.sleep(0.05)
+
+    asyncio.run(roda())
+
+    enviados = [c.args[0] for c in escuta.text_channel.send.await_args_list]
+    assert listen.m.REMINDER.format(mencao="<@7>", texto=listen.m.REMINDER_SEM_TEXTO) in enviados
 
 
 def test_falha_antes_de_falar_avisa_no_chat(monkeypatch):

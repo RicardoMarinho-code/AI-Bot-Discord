@@ -19,7 +19,7 @@ import random
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 import numpy as np
@@ -64,6 +64,10 @@ _SORTEAR = "sortear_numero"
 _ESCOLHER = "escolher_entre"
 _SORTEIO_MAX = 20  # números por pedido: "sorteia 3 números de 1 a 60"
 _aleatorio = random.SystemRandom()
+# "me avisa em 10 minutos": o aviso vai para o chat, marcando quem pediu
+_LEMBRETE = "criar_lembrete"
+_LEMBRETE_MIN_S = 5
+_LEMBRETE_MAX_S = 24 * 3600  # o bot reinicia de vez em quando: mais que um dia se perderia
 
 
 @dataclass
@@ -73,6 +77,8 @@ class Resposta:
     primeiro_audio_s: float | None = None  # do fim da pergunta ao primeiro pedaço de fala
     segundos_de_fala: float = 0.0
     quer_sair: bool = False  # o Gemini entendeu que mandaram o bot embora (_SAIR)
+    # (daqui a quantos segundos, o quê): quem chamou agenda (core/listen)
+    lembretes: list[tuple[int, str]] = field(default_factory=list)
 
 
 def agora() -> datetime:
@@ -115,7 +121,7 @@ def _instrucao(quem: str = "") -> str:
         " clima, lançamentos), pesquise no Google antes de responder. Se mesmo"
         " assim não souber, diga que não sabe."
         # 27/09: "posso colocar a música pra tocar", "mandado o recado pro Olavo"
-        " Você só conversa: não toca músicas, não manda mensagens nem recados, não"
+        " Você só conversa: não toca músicas, não manda mensagens nem recados para outras pessoas, não"
         " chama ninguém e não faz nada no Discord ou no computador — se pedirem,"
         " diga com naturalidade que isso você não consegue fazer."
         ' Se pedirem para você parar, esquecer ou ficar quieto, responda só "Tudo bem".'
@@ -129,11 +135,22 @@ def _instrucao(quem: str = "") -> str:
         f" Para sortear números, jogar dados, cara ou coroa ou escolher entre opções,"
         f" use as ferramentas {_SORTEAR} e {_ESCOLHER} e diga o resultado que elas"
         " derem — nunca invente um sorteio de cabeça."
+        f" Para lembretes e timers de quem está falando (\"me avisa em 10 minutos\"),"
+        f" use a ferramenta {_LEMBRETE}: na hora, você marca a pessoa no chat."
         f"\n\nAgora é {descreve_agora(agora())} (horário de {config.FUSO})."
     )
     if quem:
         texto += f"\nQuem está falando com você: {quem}."
     return texto
+
+
+def le_lembrete(args: dict | None) -> tuple[int, str]:
+    """(segundos, texto) de um criar_lembrete; ValueError se fora dos limites."""
+    args = args or {}
+    segundos = round(float(args.get("segundos", 0)))
+    if not _LEMBRETE_MIN_S <= segundos <= _LEMBRETE_MAX_S:
+        raise ValueError(f"o lembrete precisa ser de {_LEMBRETE_MIN_S}s a 24h")
+    return segundos, str(args.get("texto") or "").strip()[:200]
 
 
 def executa_ferramenta(nome: str, args: dict | None) -> dict:
@@ -146,6 +163,9 @@ def executa_ferramenta(nome: str, args: dict | None) -> dict:
             minimo, maximo = sorted((int(args.get("minimo", 1)), int(args.get("maximo", 6))))
             quantidade = min(max(int(args.get("quantidade", 1)), 1), _SORTEIO_MAX)
             return {"numeros": [_aleatorio.randint(minimo, maximo) for _ in range(quantidade)]}
+        if nome == _LEMBRETE:
+            segundos, _texto = le_lembrete(args)
+            return {"resultado": f"ok: o aviso vai para o chat daqui a {segundos} segundos"}
         if nome == _ESCOLHER:
             opcoes = [str(o).strip() for o in args.get("opcoes") or [] if str(o).strip()]
             if not opcoes:
@@ -194,6 +214,21 @@ def _ferramentas() -> list:
                         description='as opções, ex.: ["cara", "coroa"]',
                     ),
                 }, required=["opcoes"]),
+            ),
+            types.FunctionDeclaration(
+                name=_LEMBRETE,
+                description=(
+                    "Agenda um lembrete para quem está falando: daqui a tantos segundos,"
+                    " o bot marca a pessoa no chat do Discord com o texto. Até 24 horas."
+                ),
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "segundos": types.Schema(
+                        type=inteiro, description="daqui a quantos segundos (10 minutos = 600)",
+                    ),
+                    "texto": types.Schema(
+                        type=types.Type.STRING, description='do que lembrar, ex.: "tirar a pizza do forno"',
+                    ),
+                }, required=["segundos"]),
             ),
         ]),
     ]
@@ -352,13 +387,15 @@ async def responde(
                     chamadas = msg.tool_call.function_calls or []
                     resposta.quer_sair |= any(chamada.name == _SAIR for chamada in chamadas)
                     chamadas_no_turno.extend(chamada.name for chamada in chamadas)
-                    await sessao.send_tool_response(function_responses=[
-                        types.FunctionResponse(
-                            id=chamada.id, name=chamada.name,
-                            response=executa_ferramenta(chamada.name, chamada.args),
-                        )
-                        for chamada in chamadas
-                    ])
+                    retornos = []
+                    for chamada in chamadas:
+                        retorno = executa_ferramenta(chamada.name, chamada.args)
+                        if chamada.name == _LEMBRETE and "erro" not in retorno:
+                            resposta.lembretes.append(le_lembrete(chamada.args))
+                        retornos.append(types.FunctionResponse(
+                            id=chamada.id, name=chamada.name, response=retorno,
+                        ))
+                    await sessao.send_tool_response(function_responses=retornos)
                 conteudo = msg.server_content
                 if conteudo is None:
                     continue

@@ -34,6 +34,10 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+# os lembretes pendentes: referência forte (o asyncio só guarda uma fraca) e
+# fora da escuta, para o aviso chegar mesmo se o bot sair da call antes
+_lembretes: set[asyncio.Task] = set()
+
 BYTES_PER_SECOND = 192_000  # 48kHz * 2 canais * 2 bytes
 MIN_SPEECH_S = 0.4
 # depois de aparar o silêncio das pontas: um "Jarvis" dito rápido tem ~0,35s
@@ -844,6 +848,8 @@ class VoiceListener:
             log.info(
                 "🗣️ [%s] o Gemini ouviu %r e respondeu %r", user_id, resposta.pergunta, resposta.texto,
             )
+        for segundos, lembrete in resposta.lembretes:
+            self._agenda_lembrete(user_id, segundos, lembrete)
         if resposta.quer_sair:
             # mandaram o bot embora de um jeito que a lista curta não pega
             # ("ninguém te chamou, vaza"): o Gemini entendeu e se despediu
@@ -875,6 +881,24 @@ class VoiceListener:
                 pergunta=(resposta.pergunta or texto)[:300],
                 resposta=resposta.texto[:1500],
             ))
+
+    def _agenda_lembrete(self, user_id: int, segundos: float, texto: str) -> None:
+        """"Jarvis, me avisa em 10 minutos": daqui a `segundos`, marca a pessoa no chat."""
+        canal = self.text_channel
+
+        async def avisa() -> None:
+            await asyncio.sleep(segundos)
+            try:
+                await canal.send(m.REMINDER.format(
+                    mencao=f"<@{user_id}>", texto=texto or m.REMINDER_SEM_TEXTO,
+                ))
+            except Exception:  # um aviso perdido não derruba nada
+                log.warning("⏰ [%s] não consegui mandar o lembrete", user_id, exc_info=True)
+
+        tarefa = asyncio.create_task(avisa())
+        _lembretes.add(tarefa)
+        tarefa.add_done_callback(_lembretes.discard)
+        log.info("⏰ [%s] lembrete agendado para daqui a %ds", user_id, segundos)
 
     # --- sair ---
 

@@ -53,9 +53,11 @@ também aparece escrita no chat.
 - **Sorteios de verdade:** *"Jarvis, joga um dado"*, *"sorteia três números de
   1 a 60"*, *"cara ou coroa?"*, *"quem começa, eu ou o Pedro?"*. O resultado
   sai de um sorteio no computador, não da cabeça da IA.
+- **Lembretes:** *"Jarvis, me avisa em 10 minutos pra tirar a pizza"*. Na hora,
+  o bot marca você no chat (até 24 horas; reiniciar o bot apaga os pendentes).
 - Se todo mundo sair da call, ele sai sozinho depois de 2 minutos.
 
-O bot só conversa: não toca música, não manda mensagem e não mexe no Discord —
+O bot só conversa: não toca música, não manda recado para os outros e não mexe no Discord —
 se pedirem, ele diz que não consegue.
 
 ## Como funciona

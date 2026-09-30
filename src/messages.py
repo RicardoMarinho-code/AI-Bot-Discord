@@ -27,6 +27,8 @@ VOICE_BYE = "👋 Falou! Até a próxima."
 # ── Respostas ────────────────────────────────────────────────────────────────
 VOICE_ANSWER = '🗣️ **{quem}:** *"{pergunta}"*\n>>> {resposta}'
 VOICE_ANSWER_FAILED = "😵 Não consegui responder agora. Pergunta de novo daqui a pouco?"
+REMINDER = "⏰ {mencao}, lembrete: **{texto}**"
+REMINDER_SEM_TEXTO = "deu a hora que você pediu"
 
 # ── Geral ────────────────────────────────────────────────────────────────────
 COMMAND_ERROR = "😵 Deu um erro aqui do meu lado. Tenta de novo?"
