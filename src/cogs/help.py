@@ -7,43 +7,67 @@ import messages as m
 _SECTIONS = [
     (
         "🎧 Entrar e sair",
-        "`/entrar` — entro no canal de voz em que você está e fico ouvindo\n"
-        "`/sair` — saio da call (ou fale "
-        f'*"{m.NOME}, sai da call"*, *"{m.NOME}, pode ir embora"* ou *"{m.NOME}, tchau"*)\n'
-        "`/voz` — troco a minha voz neste servidor (masculinas e femininas)\n"
-        "`/status` — como eu estou: call, voz, memória, lembretes\n"
-        "Se todo mundo sair, eu saio sozinho depois de 2 minutos.",
+        (
+            "`/entrar` — entro no canal de voz em que você está e fico ouvindo\n"
+            "`/sair` — saio da call (ou fale "
+            f'*"{m.NOME}, sai da call"*, *"{m.NOME}, pode ir embora"* ou *"{m.NOME}, tchau"*)\n'
+            "Se todo mundo sair, eu saio sozinho depois de 2 minutos."
+        ),
     ),
     (
         "🗣️ Perguntar",
-        f'Comece pelo meu nome: *"{m.NOME}, quanto tempo leva pra cozinhar um ovo?"*.'
-        " Eu respondo falando, e a pergunta e a resposta também aparecem aqui no chat.\n"
-        f'Pode chamar e esperar: *"{m.NOME}…"* (toca um estalo) e aí fazer a pergunta.'
-        " Pausa no meio da pergunta tudo bem, eu espero você terminar.\n"
-        "Depois de eu responder, você tem uns segundos para continuar SEM repetir"
-        ' o meu nome: *"e a de Portugal?"* depois da capital da França.',
+        (
+            f'Comece pelo meu nome: *"{m.NOME}, quanto tempo leva pra cozinhar um ovo?"*.'
+            " Eu respondo falando, e a pergunta e a resposta também aparecem aqui no chat.\n"
+            f'Pode chamar e esperar: *"{m.NOME}…"* (toca um estalo) e aí fazer a pergunta.'
+            " Pausa no meio da pergunta tudo bem, eu espero você terminar.\n"
+            "Depois de eu responder, você tem uns segundos para continuar SEM repetir"
+            ' o meu nome: *"e a de Portugal?"* depois da capital da França.'
+        ),
     ),
     (
-        "🌐 Internet e sorteios",
+        "🧰 O que eu sei fazer",
         (
-            "Para notícias, placares, cotações e clima, eu pesquiso no Google antes de"
-            f' responder. E sorteio de verdade: *"{m.NOME}, joga um dado"*,'
-            ' *"sorteia de 1 a 100"*, *"cara ou coroa?"*.\n'
-            f'Lembretes: *"{m.NOME}, me avisa em 10 minutos pra tirar a pizza"*'
-            " — na hora, eu te marco aqui no chat. `/lembretes` mostra ou cancela os seus."
+            "🌐 Notícias, placares, cotações e clima: pesquiso no Google antes de responder.\n"
+            f'🧮 Contas certas: *"{m.NOME}, quanto é 15% de 1250?"*\n'
+            '🕒 Hora e datas: *"que horas são em Tóquio?"*, *"quantos dias faltam pro Natal?"*\n'
+            '🎲 Sorteios: *"joga um dado"*, *"cara ou coroa?"*, *"sorteia alguém da call"*\n'
+            '📊 Enquetes no chat: *"faz uma enquete: pizza ou hambúrguer?"*\n'
+            '👥 *"Quem tá na call?"*'
+        ),
+    ),
+    (
+        "⏰ Lembretes e 📝 anotações",
+        (
+            f'*"{m.NOME}, me avisa em 10 minutos pra tirar a pizza"*: na hora, eu te marco'
+            ' aqui no chat. *"Quais são meus lembretes?"* e *"cancela meus lembretes"* também.\n'
+            f'*"{m.NOME}, anota: comprar pão"*, *"o que eu anotei?"*, *"apaga minhas notas"*.\n'
+            "`/lembretes` e `/notas` mostram (ou apagam) os seus — só você vê."
+        ),
+    ),
+    (
+        "⚙️ Comandos",
+        (
+            "`/voz` — troco a minha voz neste servidor (masculinas e femininas)\n"
+            "`/status` — como eu estou: call, voz, memória, lembretes\n"
+            "`/esquecer` — apago a memória da conversa na hora"
         ),
     ),
     (
         "✋ Interromper",
-        f'*"{m.NOME}, para"*, *"{m.NOME}, esquece"*, *"{m.NOME}, tá bom"* ou só'
-        f' *"{m.NOME}"* corta a minha resposta. Uma pergunta nova também.',
+        (
+            f'*"{m.NOME}, para"*, *"{m.NOME}, esquece"*, *"{m.NOME}, tá bom"* ou só'
+            f' *"{m.NOME}"* corta a minha resposta. Uma pergunta nova também.'
+        ),
     ),
     (
         "🔒 Privacidade",
-        "Eu escuto a call o tempo todo para ouvir o meu nome, mas só a fala de"
-        " quem me chamou vai para a IA (Google Gemini). O resto fica no computador"
-        " onde eu rodo. Eu lembro das últimas perguntas por 10 minutos; `/esquecer`"
-        " apaga isso na hora.",
+        (
+            "Eu escuto a call o tempo todo para ouvir o meu nome, mas só a fala de"
+            " quem me chamou vai para a IA (Google Gemini). O resto fica no computador"
+            " onde eu rodo. Eu lembro das últimas perguntas por 10 minutos; `/esquecer`"
+            " apaga isso na hora."
+        ),
     ),
 ]
 
