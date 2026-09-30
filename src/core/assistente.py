@@ -53,6 +53,18 @@ class Assistente:
             return []
         return [membro for membro in self.voice.channel.members if not membro.bot]
 
+    async def nomes_na_call(self) -> list[str]:
+        """Os apelidos de quem está na call com o bot (sem ele).
+
+        Pelos voice_states do canal e não por channel.members: sem o intent de
+        membros, quem já estava na call quando o bot entrou fica fora do cache.
+        """
+        if not self.voice or not self.voice.channel:
+            return []
+        eu = self.guild.me.id if self.guild.me is not None else None
+        nomes = [await self.nome_de(uid) for uid in self.voice.channel.voice_states if uid != eu]
+        return [nome for nome in nomes if nome]
+
     async def nome_de(self, user_id: int) -> str:
         """Como chamar quem falou (o apelido no servidor), ou "" se não souber.
 

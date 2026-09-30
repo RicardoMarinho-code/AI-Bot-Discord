@@ -198,7 +198,7 @@ def test_resposta_chega_aos_pedacos_e_e_repassada_na_hora(sessao):
     [busca, ferramenta] = sessao.configs[0].tools
     assert busca.google_search is not None
     assert [f.name for f in ferramenta.function_declarations] == [
-        gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER, gemini._LEMBRETE,
+        gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER, gemini._NA_CALL, gemini._LEMBRETE,
     ]
     assert not resposta.quer_sair
     # a pergunta vai marcada: início, áudio 16 kHz, fim
@@ -320,6 +320,37 @@ def test_lembrete_fora_dos_limites_volta_como_erro_para_o_gemini(sessao):
     assert resposta.lembretes == []
     [(_, kw)] = [e for e in sessao.enviado if e[0] == "ferramenta"]
     assert "erro" in kw["function_responses"][0].response
+
+
+def test_quem_esta_na_call_so_busca_os_nomes_se_o_gemini_pedir(sessao):
+    buscas = []
+
+    async def na_call():
+        buscas.append(1)
+        return ["Ricardo", "Pedro"]
+
+    sessao.mensagens = [
+        _chama_ferramenta(gemini._NA_CALL), _msg(fim=True),
+        _msg(falou="Deu o Pedro!"), _msg(fim=True),
+    ]
+    resposta = asyncio.run(gemini.responde(9, UM_SEGUNDO, na_call=na_call))
+
+    assert resposta.texto == "Deu o Pedro!" and buscas == [1]
+    [(_, kw)] = [e for e in sessao.enviado if e[0] == "ferramenta"]
+    assert kw["function_responses"][0].response == {"pessoas": ["Ricardo", "Pedro"]}
+
+    sessao.mensagens = [_msg(falou="Paris."), _msg(fim=True)]
+    asyncio.run(gemini.responde(9, UM_SEGUNDO, na_call=na_call))
+    assert buscas == [1]  # sem a ferramenta, nada de ir atrás dos nomes
+
+
+def test_quem_esta_na_call_sem_quem_saiba_responde_lista_vazia(sessao):
+    sessao.mensagens = [_chama_ferramenta(gemini._NA_CALL), _msg(falou="Não sei."), _msg(fim=True)]
+
+    asyncio.run(gemini.responde(9, UM_SEGUNDO))
+
+    [(_, kw)] = [e for e in sessao.enviado if e[0] == "ferramenta"]
+    assert kw["function_responses"][0].response == {"pessoas": []}
 
 
 def test_le_lembrete_arredonda_e_corta_o_texto():
@@ -473,7 +504,7 @@ def _listener():
 
 
 def _responde_com(monkeypatch, resposta, pedacos=()):
-    async def responde(guild_id, pcm, *, quem="", ao_falar=None):
+    async def responde(guild_id, pcm, *, quem="", ao_falar=None, na_call=None):
         responde.chamadas.append((guild_id, pcm, quem))
         for pedaco in pedacos:
             ao_falar(pedaco)
@@ -606,7 +637,7 @@ def test_recusa_de_cara_tenta_de_novo_sem_a_memoria(monkeypatch):
     após duas trocas sem sentido na memória — a pergunta se perdia."""
     tentativas = []
 
-    async def responde(guild_id, pcm, *, quem="", ao_falar=None):
+    async def responde(guild_id, pcm, *, quem="", ao_falar=None, na_call=None):
         tentativas.append(bool(gemini._memoria(guild_id)))
         if len(tentativas) == 1:
             raise RuntimeError("1007 None. Precondition check failed.")
@@ -698,7 +729,7 @@ def test_erro_inesperado_na_conversa_vai_para_o_log(monkeypatch, caplog):
 
 
 def _gemini_que_espera(monkeypatch, liberar: asyncio.Event):
-    async def responde(guild_id, pcm, *, quem="", ao_falar=None):
+    async def responde(guild_id, pcm, *, quem="", ao_falar=None, na_call=None):
         responde.comecou = True
         await liberar.wait()
         return gemini.Resposta(texto="ok", segundos_de_fala=1.0)

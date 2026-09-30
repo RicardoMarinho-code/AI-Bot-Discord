@@ -18,7 +18,7 @@ import logging
 import random
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -99,6 +99,8 @@ _aleatorio = random.SystemRandom()
 _LEMBRETE = "criar_lembrete"
 _LEMBRETE_MIN_S = 5
 _LEMBRETE_MAX_S = 24 * 3600  # o bot reinicia de vez em quando: mais que um dia se perderia
+# "quem tá na call?", "sorteia alguém daqui": o Gemini só conhece quem fala
+_NA_CALL = "quem_esta_na_call"
 
 
 @dataclass
@@ -168,6 +170,7 @@ def _instrucao(quem: str = "") -> str:
         " derem — nunca invente um sorteio de cabeça."
         f" Para lembretes e timers de quem está falando (\"me avisa em 10 minutos\"),"
         f" use a ferramenta {_LEMBRETE}: na hora, você marca a pessoa no chat."
+        f" Para saber quem está na call (ou sortear alguém daqui), use {_NA_CALL}."
         f"\n\nAgora é {descreve_agora(agora())} (horário de {config.FUSO})."
     )
     if quem:
@@ -245,6 +248,13 @@ def _ferramentas() -> list:
                         description='as opções, ex.: ["cara", "coroa"]',
                     ),
                 }, required=["opcoes"]),
+            ),
+            types.FunctionDeclaration(
+                name=_NA_CALL,
+                description=(
+                    "Os nomes de quem está agora na call de voz com você (sem contar"
+                    " você). Use para dizer quem está aqui ou sortear alguém da call."
+                ),
             ),
             types.FunctionDeclaration(
                 name=_LEMBRETE,
@@ -386,12 +396,14 @@ async def responde(
     *,
     quem: str = "",
     ao_falar: Callable[[bytes], None] | None = None,
+    na_call: Callable[[], Awaitable[list[str]]] | None = None,
 ) -> Resposta:
     """A pergunta falada (PCM do Discord) → a resposta, falada e transcrita.
 
     `ao_falar(pcm)`: recebe cada pedaço da resposta (PCM 48 kHz estéreo) assim
     que ele chega. `quem`: o nome de quem perguntou, para o Gemini saber com
-    quem fala.
+    quem fala. `na_call()`: os nomes de quem está na call — só chamada se o
+    Gemini perguntar (buscar os nomes pode ir à API do Discord).
     """
     from google.genai import types
 
@@ -435,7 +447,10 @@ async def responde(
                     chamadas_no_turno.extend(chamada.name for chamada in chamadas)
                     retornos = []
                     for chamada in chamadas:
-                        retorno = executa_ferramenta(chamada.name, chamada.args)
+                        if chamada.name == _NA_CALL:
+                            retorno = {"pessoas": await na_call() if na_call is not None else []}
+                        else:
+                            retorno = executa_ferramenta(chamada.name, chamada.args)
                         if chamada.name == _LEMBRETE and "erro" not in retorno:
                             resposta.lembretes.append(le_lembrete(chamada.args))
                         retornos.append(types.FunctionResponse(
