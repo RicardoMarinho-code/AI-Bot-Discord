@@ -48,6 +48,11 @@ também aparece escrita no chat.
   Portugal?"* depois da capital da França). Sair da call zera.
 - O bot sabe **que dia e que horas são** e **com quem está falando** (o apelido
   no servidor).
+- **Internet:** para o que muda com o tempo (notícias, placares, cotações,
+  clima), ele pesquisa no Google antes de responder.
+- **Sorteios de verdade:** *"Jarvis, joga um dado"*, *"sorteia três números de
+  1 a 60"*, *"cara ou coroa?"*, *"quem começa, eu ou o Pedro?"*. O resultado
+  sai de um sorteio no computador, não da cabeça da IA.
 - Se todo mundo sair da call, ele sai sozinho depois de 2 minutos.
 
 O bot só conversa: não toca música, não manda mensagem e não mexe no Discord —

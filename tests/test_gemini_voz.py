@@ -121,8 +121,8 @@ def _msg(*, data=b"", ouviu="", falou="", fim=False):
     return SimpleNamespace(data=data or None, server_content=conteudo, tool_call=None)
 
 
-def _chama_ferramenta(nome):
-    chamada = SimpleNamespace(id="c1", name=nome, args={})
+def _chama_ferramenta(nome, args=None):
+    chamada = SimpleNamespace(id="c1", name=nome, args=args or {})
     return SimpleNamespace(
         data=None, server_content=None, tool_call=SimpleNamespace(function_calls=[chamada]),
     )
@@ -194,10 +194,12 @@ def test_resposta_chega_aos_pedacos_e_e_repassada_na_hora(sessao):
     assert resposta.texto == "É Paris." and resposta.pergunta == "capital da França?"
     assert resposta.segundos_de_fala == pytest.approx(0.2)
     assert "Ricardo" in sessao.configs[0].system_instruction
-    # as ferramentas: pesquisa Google (internet) e sair da call
+    # as ferramentas: pesquisa Google (internet), sair da call e os sorteios
     [busca, ferramenta] = sessao.configs[0].tools
     assert busca.google_search is not None
-    assert [f.name for f in ferramenta.function_declarations] == [gemini._SAIR]
+    assert [f.name for f in ferramenta.function_declarations] == [
+        gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER,
+    ]
     assert not resposta.quer_sair
     # a pergunta vai marcada: início, áudio 16 kHz, fim
     tipos = [next(iter(kw)) for _, kw in sessao.enviado]
@@ -244,6 +246,58 @@ def test_sem_despedida_depois_da_ferramenta_nao_espera_para_sempre(sessao, monke
     resposta = asyncio.run(gemini.responde(5, UM_SEGUNDO))
 
     assert resposta.quer_sair and not resposta.segundos_de_fala
+
+
+def test_sorteio_de_verdade_e_a_fala_que_vem_depois(sessao):
+    """"Jarvis, joga um dado": o número sai da ferramenta, não da cabeça do modelo,
+    e a fala com o resultado vem num turno novo."""
+    pedaco_24k = np.full(2400, 300, dtype=np.int16).tobytes()
+    sessao.mensagens = [
+        _chama_ferramenta(gemini._SORTEAR, {"minimo": 1, "maximo": 6}), _msg(fim=True),
+        _msg(data=pedaco_24k, falou="Deu quatro!"), _msg(fim=True),
+    ]
+
+    resposta = asyncio.run(gemini.responde(7, UM_SEGUNDO))
+
+    assert resposta.texto == "Deu quatro!" and not resposta.quer_sair
+    [(_, kw)] = [e for e in sessao.enviado if e[0] == "ferramenta"]
+    [numero] = kw["function_responses"][0].response["numeros"]
+    assert 1 <= numero <= 6
+
+
+def test_sorteio_de_numeros():
+    for _ in range(50):
+        [n] = gemini.executa_ferramenta(gemini._SORTEAR, {"minimo": 1, "maximo": 6})["numeros"]
+        assert 1 <= n <= 6
+    tres = gemini.executa_ferramenta(gemini._SORTEAR, {"minimo": 1, "maximo": 60, "quantidade": 3})
+    assert len(tres["numeros"]) == 3
+
+
+def test_sorteio_aceita_limites_invertidos_e_poe_teto_na_quantidade():
+    """O modelo manda "maximo": 1, "minimo": 10 às vezes; e ninguém quer ouvir 1000 números."""
+    numeros = gemini.executa_ferramenta(
+        gemini._SORTEAR, {"minimo": 10, "maximo": 1, "quantidade": 1000},
+    )["numeros"]
+    assert len(numeros) == gemini._SORTEIO_MAX and all(1 <= n <= 10 for n in numeros)
+
+
+def test_escolhe_entre_as_opcoes():
+    escolhas = {
+        gemini.executa_ferramenta(gemini._ESCOLHER, {"opcoes": ["cara", "coroa"]})["escolhido"]
+        for _ in range(100)
+    }
+    assert escolhas == {"cara", "coroa"}
+
+
+def test_ferramenta_com_argumentos_ruins_nao_quebra_a_conversa():
+    assert "erro" in gemini.executa_ferramenta(gemini._ESCOLHER, {"opcoes": ["", " "]})
+    assert "erro" in gemini.executa_ferramenta(gemini._SORTEAR, {"minimo": "um", "maximo": 6})
+    assert "erro" in gemini.executa_ferramenta("nao_existe", None)
+
+
+def test_instrucao_manda_sortear_com_a_ferramenta():
+    texto = gemini._instrucao()
+    assert gemini._SORTEAR in texto and gemini._ESCOLHER in texto
 
 
 def test_pedaco_da_pergunta_que_chega_depois_do_fim_do_turno_nao_se_perde(sessao):

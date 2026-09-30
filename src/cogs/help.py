@@ -22,6 +22,14 @@ _SECTIONS = [
         ' o meu nome: *"e a de Portugal?"* depois da capital da França.',
     ),
     (
+        "🌐 Internet e sorteios",
+        (
+            "Para notícias, placares, cotações e clima, eu pesquiso no Google antes de"
+            f' responder. E sorteio de verdade: *"{m.NOME}, joga um dado"*,'
+            ' *"sorteia de 1 a 100"*, *"cara ou coroa?"*.'
+        ),
+    ),
+    (
         "✋ Interromper",
         f'*"{m.NOME}, para"*, *"{m.NOME}, esquece"*, *"{m.NOME}, tá bom"* ou só'
         f' *"{m.NOME}"* corta a minha resposta. Uma pergunta nova também.',

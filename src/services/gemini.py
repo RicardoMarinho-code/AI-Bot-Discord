@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
 from collections import deque
 from collections.abc import Callable
@@ -37,6 +38,8 @@ _TEMPO_MAX_S = 45.0
 _TRANSCRICAO_ATRASADA_S = 0.6
 # mandado embora: quanto esperar pela despedida, que vem depois da ferramenta
 _DESPEDIDA_S = 5.0
+# turnos só de ferramenta seguidos, antes de desistir de esperar a fala
+_TURNOS_DE_FERRAMENTA = 3
 # o tier grátis aceita poucas sessões Live simultâneas por chave
 _sessoes = asyncio.Semaphore(2)
 # memória curta por servidor: "e a de Portugal?" depois de "capital da França"
@@ -52,9 +55,15 @@ _MESES = (
 
 _cliente = None
 
-# a única ferramenta: o jeito de o Gemini tirar o bot da call quando o mandam
-# embora com palavras que a lista de core/intents não prevê
+# o jeito de o Gemini tirar o bot da call quando o mandam embora com palavras
+# que a lista de core/intents não prevê
 _SAIR = "sair_da_call"
+# sorteios de verdade: o modelo "sorteando" de cabeça repete sempre os mesmos
+# números (o 7, o 42) e a moeda quase sempre dá cara
+_SORTEAR = "sortear_numero"
+_ESCOLHER = "escolher_entre"
+_SORTEIO_MAX = 20  # números por pedido: "sorteia 3 números de 1 a 60"
+_aleatorio = random.SystemRandom()
 
 
 @dataclass
@@ -117,11 +126,77 @@ def _instrucao(quem: str = "") -> str:
         f" quer conversar sem você —, use a ferramenta {_SAIR} e se despeça numa"
         " frase bem curta. Só quando for um pedido para VOCÊ ir embora: \"sai mais"
         ' barato?" ou "como se diz tchau em inglês?" são perguntas.'
+        f" Para sortear números, jogar dados, cara ou coroa ou escolher entre opções,"
+        f" use as ferramentas {_SORTEAR} e {_ESCOLHER} e diga o resultado que elas"
+        " derem — nunca invente um sorteio de cabeça."
         f"\n\nAgora é {descreve_agora(agora())} (horário de {config.FUSO})."
     )
     if quem:
         texto += f"\nQuem está falando com você: {quem}."
     return texto
+
+
+def executa_ferramenta(nome: str, args: dict | None) -> dict:
+    """O que o bot responde a uma chamada de ferramenta do Gemini."""
+    args = args or {}
+    if nome == _SAIR:
+        return {"resultado": "ok: você sai da call assim que terminar de falar"}
+    try:
+        if nome == _SORTEAR:
+            minimo, maximo = sorted((int(args.get("minimo", 1)), int(args.get("maximo", 6))))
+            quantidade = min(max(int(args.get("quantidade", 1)), 1), _SORTEIO_MAX)
+            return {"numeros": [_aleatorio.randint(minimo, maximo) for _ in range(quantidade)]}
+        if nome == _ESCOLHER:
+            opcoes = [str(o).strip() for o in args.get("opcoes") or [] if str(o).strip()]
+            if not opcoes:
+                return {"erro": "nenhuma opção para escolher"}
+            return {"escolhido": _aleatorio.choice(opcoes)}
+    except (TypeError, ValueError) as erro:
+        return {"erro": f"argumentos inválidos: {erro}"}
+    return {"erro": f"ferramenta desconhecida: {nome}"}
+
+
+def _ferramentas() -> list:
+    from google.genai import types
+
+    inteiro = types.Type.INTEGER
+    return [
+        # acesso à internet: a busca roda no Google e não gera tool_call para o bot
+        types.Tool(google_search=types.GoogleSearch()),
+        types.Tool(function_declarations=[
+            types.FunctionDeclaration(
+                name=_SAIR,
+                description=(
+                    "Sai da call de voz do Discord. Use quando a pessoa pedir ou mandar"
+                    " você ir embora, te expulsar ou dispensar da call."
+                ),
+            ),
+            types.FunctionDeclaration(
+                name=_SORTEAR,
+                description=(
+                    "Sorteia números inteiros ao acaso, de minimo a maximo (inclusive)."
+                    " Dado comum: 1 a 6. Use sempre que pedirem um sorteio ou um dado."
+                ),
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "minimo": types.Schema(type=inteiro, description="menor número possível"),
+                    "maximo": types.Schema(type=inteiro, description="maior número possível"),
+                    "quantidade": types.Schema(
+                        type=inteiro, description=f"quantos números sortear (1 a {_SORTEIO_MAX})",
+                    ),
+                }, required=["minimo", "maximo"]),
+            ),
+            types.FunctionDeclaration(
+                name=_ESCOLHER,
+                description="Escolhe uma opção ao acaso: cara ou coroa, quem começa, onde comer.",
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "opcoes": types.Schema(
+                        type=types.Type.ARRAY, items=types.Schema(type=types.Type.STRING),
+                        description='as opções, ex.: ["cara", "coroa"]',
+                    ),
+                }, required=["opcoes"]),
+            ),
+        ]),
+    ]
 
 
 def _get_cliente():
@@ -213,17 +288,7 @@ def _config(quem: str = ""):
         response_modalities=["AUDIO"],
         system_instruction=_instrucao(quem),
         speech_config=fala,
-        tools=[
-            # acesso à internet: a busca roda no Google e não gera tool_call para o bot
-            types.Tool(google_search=types.GoogleSearch()),
-            types.Tool(function_declarations=[types.FunctionDeclaration(
-                name=_SAIR,
-                description=(
-                    "Sai da call de voz do Discord. Use quando a pessoa pedir ou mandar"
-                    " você ir embora, te expulsar ou dispensar da call."
-                ),
-            )]),
-        ],
+        tools=_ferramentas(),
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
         # quem decide onde a fala começa e termina é a escuta do bot: a pergunta
@@ -253,6 +318,7 @@ async def responde(
     resposta = Resposta()
     texto: list[str] = []
     pergunta: list[str] = []
+    chamadas_no_turno: list[str] = []
     async with (
         _sessoes,
         asyncio.timeout(_TEMPO_MAX_S),
@@ -285,10 +351,11 @@ async def responde(
                     # a saída de fato fica para quem chamou, depois de a fala tocar
                     chamadas = msg.tool_call.function_calls or []
                     resposta.quer_sair |= any(chamada.name == _SAIR for chamada in chamadas)
+                    chamadas_no_turno.extend(chamada.name for chamada in chamadas)
                     await sessao.send_tool_response(function_responses=[
                         types.FunctionResponse(
                             id=chamada.id, name=chamada.name,
-                            response={"resultado": "ok: você sai da call assim que terminar de falar"},
+                            response=executa_ferramenta(chamada.name, chamada.args),
                         )
                         for chamada in chamadas
                     ])
@@ -303,14 +370,21 @@ async def responde(
                     return
 
         await ouve_turno()
-        if resposta.quer_sair and not resposta.segundos_de_fala:
-            # 30/09: o turno da ferramenta fecha sem fala, e a despedida vem num
-            # turno NOVO, depois da resposta dela — sem esperar, o bot saía mudo
+        # 30/09: o turno da ferramenta fecha sem fala, e a fala vem num turno
+        # NOVO, depois da resposta dela — sem esperar, o bot saía mudo. Um
+        # sorteio pode puxar outro ("dois dados"): no máximo alguns turnos.
+        for _ in range(_TURNOS_DE_FERRAMENTA):
+            if not chamadas_no_turno or resposta.segundos_de_fala:
+                break
+            chamadas_no_turno.clear()
+            if not resposta.quer_sair:
+                await ouve_turno()
+                continue
             try:
                 async with asyncio.timeout(_DESPEDIDA_S):
                     await ouve_turno()
             except TimeoutError:
-                pass
+                break
         # a transcrição da PERGUNTA às vezes chega em pedaços e o último depois
         # do fim do turno (visto em 27/09: o chat mostrou "que dia é hoje e",
         # sem o resto). O áudio já tocou; só a mensagem do chat espera isto.
