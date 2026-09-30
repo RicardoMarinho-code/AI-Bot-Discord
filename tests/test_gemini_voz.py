@@ -198,7 +198,7 @@ def test_resposta_chega_aos_pedacos_e_e_repassada_na_hora(sessao):
     [busca, ferramenta] = sessao.configs[0].tools
     assert busca.google_search is not None
     assert [f.name for f in ferramenta.function_declarations] == [
-        gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER, gemini._CALCULAR, gemini._NA_CALL,
+        gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER, gemini._HORA_EM, gemini._CALCULAR, gemini._NA_CALL,
         gemini._MEUS_LEMBRETES, gemini._CANCELA_LEMBRETES, gemini._LEMBRETE,
     ]
     assert not resposta.quer_sair
@@ -392,6 +392,23 @@ def test_le_lembrete_arredonda_e_corta_o_texto():
     assert gemini.le_lembrete({"segundos": "90.4", "texto": "  x" * 200}) == (90, ("  x" * 200).strip()[:200])
     with pytest.raises(ValueError):
         gemini.le_lembrete({"segundos": 1})
+
+
+def test_hora_em_outro_fuso(monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    monkeypatch.setattr(config, "FUSO", "America/Sao_Paulo")
+    momento = datetime(2026, 9, 30, 20, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
+
+    toquio = gemini.hora_em("Asia/Tokyo", momento)
+
+    assert toquio == {"agora_la": "quinta-feira, 1 de outubro de 2026, 08:00", "diferenca_para_ca_em_horas": 12}
+    assert gemini.hora_em("Asia/Kolkata", momento)["diferenca_para_ca_em_horas"] == 8.5
+
+
+def test_hora_em_fuso_que_nao_existe():
+    assert "erro" in gemini.hora_em("Terra/Media")
+    assert "erro" in gemini.executa_ferramenta(gemini._HORA_EM, {"fuso": ""})
 
 
 def test_conta_pela_ferramenta():

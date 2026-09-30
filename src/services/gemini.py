@@ -111,6 +111,8 @@ _MEUS_LEMBRETES = "meus_lembretes"
 _CANCELA_LEMBRETES = "cancelar_meus_lembretes"
 # o modelo erra conta de cabeça: "quanto é 15% de 80?" vai para a calculadora
 _CALCULAR = "calcular"
+# "que horas são em Tóquio?": conversão de fuso de cabeça erra o horário de verão
+_HORA_EM = "hora_em"
 
 
 @dataclass
@@ -132,6 +134,25 @@ def agora() -> datetime:
         return datetime.now(ZoneInfo(config.FUSO))
     except Exception:  # noqa: BLE001 — fuso inválido ou sem tzdata: segue com a local
         return datetime.now().astimezone()
+
+
+def hora_em(fuso: str, momento: datetime | None = None) -> dict:
+    """A data e a hora num fuso da base IANA ("Asia/Tokyo"), para o Gemini falar."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    try:
+        zona = ZoneInfo(fuso.strip())
+    except (ZoneInfoNotFoundError, ValueError):
+        return {"erro": f"fuso desconhecido: {fuso} (use o nome IANA, ex.: Europe/Lisbon)"}
+    aqui = agora()
+    base = momento or aqui
+    la = base.astimezone(zona)
+    # o mesmo instante nos dois lugares: o horário de verão de cada um conta
+    diferenca_h = (la.utcoffset() - base.astimezone(aqui.tzinfo).utcoffset()).total_seconds() / 3600
+    return {
+        "agora_la": descreve_agora(la),
+        "diferenca_para_ca_em_horas": int(diferenca_h) if diferenca_h.is_integer() else diferenca_h,
+    }
 
 
 def descreve_agora(momento: datetime) -> str:
@@ -178,6 +199,7 @@ def _instrucao(quem: str = "") -> str:
         f" Para sortear números, jogar dados, cara ou coroa ou escolher entre opções,"
         f" use as ferramentas {_SORTEAR} e {_ESCOLHER} e diga o resultado que elas"
         " derem — nunca invente um sorteio de cabeça."
+        f" Para a hora em outra cidade ou país, use {_HORA_EM}."
         f" Para qualquer conta que não seja trivial, use {_CALCULAR} e fale o"
         " resultado dela (arredondado de um jeito natural para ouvir)."
         f" Para lembretes e timers de quem está falando (\"me avisa em 10 minutos\"),"
@@ -223,6 +245,8 @@ def executa_ferramenta(nome: str, args: dict | None) -> dict:
         if nome == _LEMBRETE:
             segundos, _texto = le_lembrete(args)
             return {"resultado": f"ok: o aviso vai para o chat daqui a {segundos} segundos"}
+        if nome == _HORA_EM:
+            return hora_em(str(args.get("fuso", "")))
         if nome == _CALCULAR:
             return {"resultado": calculadora.calcula(str(args.get("expressao", "")))}
         if nome == _ESCOLHER:
@@ -273,6 +297,16 @@ def _ferramentas() -> list:
                         description='as opções, ex.: ["cara", "coroa"]',
                     ),
                 }, required=["opcoes"]),
+            ),
+            types.FunctionDeclaration(
+                name=_HORA_EM,
+                description=(
+                    "A data e a hora agora num fuso horário, e a diferença para o daqui."
+                    " Use o nome IANA do fuso: Asia/Tokyo, Europe/Lisbon, America/New_York."
+                ),
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "fuso": types.Schema(type=types.Type.STRING, description="nome IANA, ex.: Asia/Tokyo"),
+                }, required=["fuso"]),
             ),
             types.FunctionDeclaration(
                 name=_CALCULAR,

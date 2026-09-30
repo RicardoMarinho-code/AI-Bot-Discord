@@ -57,6 +57,8 @@ também aparece escrita no chat.
 - **Sorteios de verdade:** *"Jarvis, joga um dado"*, *"sorteia três números de
   1 a 60"*, *"cara ou coroa?"*, *"quem começa, eu ou o Pedro?"*. O resultado
   sai de um sorteio no computador, não da cabeça da IA.
+- **Hora pelo mundo:** *"Jarvis, que horas são em Tóquio?"*, com o horário de
+  verão de cada lugar.
 - **Contas certas:** *"Jarvis, quanto é 15% de 1.250?"*, *"raiz de 2 vezes 7"*.
   A conta sai de uma calculadora, não da cabeça da IA (que erra).
 - **Quem está na call:** *"Jarvis, quem tá aqui?"*, *"sorteia alguém da call
