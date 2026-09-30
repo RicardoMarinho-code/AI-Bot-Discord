@@ -25,6 +25,7 @@ AUTO_LEFT_EMPTY = "👋 Fiquei sozinho na call e saí. Chama de novo com `/entra
 VOICE_BYE = "👋 Falou! Até a próxima."
 VOICE_CHANGED = "🎙️ Pronto, agora eu falo com a voz **{voz}** ({estilo}). Me chama pra ouvir!"
 VOICE_RESET = "🎙️ Voltei para a minha voz de sempre."
+FORGOT = "🧽 Pronto, esqueci a nossa conversa. A próxima pergunta começa do zero."
 
 # ── Respostas ────────────────────────────────────────────────────────────────
 VOICE_ANSWER = '🗣️ **{quem}:** *"{pergunta}"*\n>>> {resposta}'

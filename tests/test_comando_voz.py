@@ -27,6 +27,18 @@ def test_voz_troca_e_confirma():
         gemini.escolhe_voz(42, None)
 
 
+def test_esquecer_apaga_a_memoria_do_servidor_e_so_dele():
+    gemini._lembra(42, "capital da França?", "Paris.")
+    gemini._lembra(43, "e a do Japão?", "Tóquio.")
+    ctx = _ctx()
+
+    asyncio.run(Voice.esquecer.callback(Voice(MagicMock()), ctx))
+
+    assert gemini._memoria(42) == [] and gemini._memoria(43)
+    ctx.respond.assert_awaited_once_with(m.FORGOT)
+    gemini.esquece(43)
+
+
 def test_voz_volta_ao_padrao():
     cog, ctx = Voice(MagicMock()), _ctx()
     gemini.escolhe_voz(42, "Puck")

@@ -85,6 +85,13 @@ class Voice(commands.Cog):
         await ctx.respond(m.VOICE_CHANGED.format(voz=nome, estilo=gemini.VOZES[nome]))
 
 
+    @commands.slash_command(name="esquecer", description="Esqueço a conversa até aqui (a memória das últimas perguntas)")
+    async def esquecer(self, ctx: discord.ApplicationContext) -> None:
+        # sem precisar tirar o bot da call (sair também zera): mudou o assunto,
+        # ou alguém falou o que não devia
+        gemini.esquece(ctx.guild.id)
+        await ctx.respond(m.FORGOT)
+
     @commands.slash_command(name="lembretes", description="Mostro (ou cancelo) os seus lembretes pendentes")
     async def lembretes(
         self,

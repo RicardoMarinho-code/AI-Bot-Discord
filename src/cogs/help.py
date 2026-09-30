@@ -41,7 +41,8 @@ _SECTIONS = [
         "🔒 Privacidade",
         "Eu escuto a call o tempo todo para ouvir o meu nome, mas só a fala de"
         " quem me chamou vai para a IA (Google Gemini). O resto fica no computador"
-        " onde eu rodo.",
+        " onde eu rodo. Eu lembro das últimas perguntas por 10 minutos; `/esquecer`"
+        " apaga isso na hora.",
     ),
 ]
 

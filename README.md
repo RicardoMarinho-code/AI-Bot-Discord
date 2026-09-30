@@ -24,6 +24,7 @@ também aparece escrita no chat.
 | --- | --- |
 | `/entrar` | Entra no canal de voz em que você está e fica ouvindo |
 | `/sair` | Sai da call (ou peça por voz: *"Jarvis, sai da call"*) |
+| `/esquecer` | Apaga a memória da conversa neste servidor, na hora |
 | `/lembretes` | Mostra os seus lembretes pendentes (com `cancelar`, apaga todos) |
 | `/voz` | Troca a voz do bot neste servidor, na hora (fica salva em `data/vozes.json`) |
 | `/ajuda` | O guia, dentro do Discord |
@@ -47,7 +48,7 @@ também aparece escrita no chat.
   (*"sai mais barato ir de ônibus?"*, *"como se diz tchau em inglês?"*)
   continuam sendo perguntas.
 - **Memória:** o bot lembra das últimas 5 trocas por 10 minutos (*"e a de
-  Portugal?"* depois da capital da França). Sair da call zera.
+  Portugal?"* depois da capital da França). Sair da call ou o `/esquecer` zera.
 - O bot sabe **que dia e que horas são** e **com quem está falando** (o apelido
   no servidor).
 - **Internet:** para o que muda com o tempo (notícias, placares, cotações,
