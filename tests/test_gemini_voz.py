@@ -198,7 +198,7 @@ def test_resposta_chega_aos_pedacos_e_e_repassada_na_hora(sessao):
     [busca, ferramenta] = sessao.configs[0].tools
     assert busca.google_search is not None
     assert [f.name for f in ferramenta.function_declarations] == [
-        gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER, gemini._NA_CALL,
+        gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER, gemini._CALCULAR, gemini._NA_CALL,
         gemini._MEUS_LEMBRETES, gemini._CANCELA_LEMBRETES, gemini._LEMBRETE,
     ]
     assert not resposta.quer_sair
@@ -392,6 +392,12 @@ def test_le_lembrete_arredonda_e_corta_o_texto():
     assert gemini.le_lembrete({"segundos": "90.4", "texto": "  x" * 200}) == (90, ("  x" * 200).strip()[:200])
     with pytest.raises(ValueError):
         gemini.le_lembrete({"segundos": 1})
+
+
+def test_conta_pela_ferramenta():
+    assert gemini.executa_ferramenta(gemini._CALCULAR, {"expressao": "0.15*80"}) == {"resultado": 12}
+    assert "erro" in gemini.executa_ferramenta(gemini._CALCULAR, {"expressao": "1/0"})
+    assert "erro" in gemini.executa_ferramenta(gemini._CALCULAR, {"expressao": "__import__('os')"})
 
 
 def test_instrucao_manda_sortear_com_a_ferramenta():

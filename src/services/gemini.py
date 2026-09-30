@@ -29,7 +29,7 @@ import numpy as np
 import config
 from core import lembretes
 from core.audio import BYTES_POR_S, FRAME_BYTES
-from services import speech
+from services import calculadora, speech
 
 log = logging.getLogger(__name__)
 
@@ -109,6 +109,8 @@ _NA_CALL = "quem_esta_na_call"
 # "quais são meus lembretes?", "cancela meus lembretes": sem ir ao /lembretes
 _MEUS_LEMBRETES = "meus_lembretes"
 _CANCELA_LEMBRETES = "cancelar_meus_lembretes"
+# o modelo erra conta de cabeça: "quanto é 15% de 80?" vai para a calculadora
+_CALCULAR = "calcular"
 
 
 @dataclass
@@ -176,6 +178,8 @@ def _instrucao(quem: str = "") -> str:
         f" Para sortear números, jogar dados, cara ou coroa ou escolher entre opções,"
         f" use as ferramentas {_SORTEAR} e {_ESCOLHER} e diga o resultado que elas"
         " derem — nunca invente um sorteio de cabeça."
+        f" Para qualquer conta que não seja trivial, use {_CALCULAR} e fale o"
+        " resultado dela (arredondado de um jeito natural para ouvir)."
         f" Para lembretes e timers de quem está falando (\"me avisa em 10 minutos\"),"
         f" use a ferramenta {_LEMBRETE}: na hora, você marca a pessoa no chat."
         f" Para saber quem está na call (ou sortear alguém daqui), use {_NA_CALL}."
@@ -219,6 +223,8 @@ def executa_ferramenta(nome: str, args: dict | None) -> dict:
         if nome == _LEMBRETE:
             segundos, _texto = le_lembrete(args)
             return {"resultado": f"ok: o aviso vai para o chat daqui a {segundos} segundos"}
+        if nome == _CALCULAR:
+            return {"resultado": calculadora.calcula(str(args.get("expressao", "")))}
         if nome == _ESCOLHER:
             opcoes = [str(o).strip() for o in args.get("opcoes") or [] if str(o).strip()]
             if not opcoes:
@@ -267,6 +273,17 @@ def _ferramentas() -> list:
                         description='as opções, ex.: ["cara", "coroa"]',
                     ),
                 }, required=["opcoes"]),
+            ),
+            types.FunctionDeclaration(
+                name=_CALCULAR,
+                description=(
+                    "Faz uma conta exata. Expressão com números, + - * / // % ** e"
+                    " parênteses; funções sqrt, abs, round, log, log10, exp, sin, cos,"
+                    " tan, floor, ceil; constantes pi e e. Ex.: 15% de 80 = 0.15*80."
+                ),
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "expressao": types.Schema(type=types.Type.STRING, description="ex.: (1250*1.08)/12"),
+                }, required=["expressao"]),
             ),
             types.FunctionDeclaration(
                 name=_NA_CALL,
