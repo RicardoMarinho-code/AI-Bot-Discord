@@ -369,6 +369,32 @@ def test_voz_escolhida_no_env_vai_na_configuracao(sessao, monkeypatch):
     assert voz == "Kore"
 
 
+def test_voz_do_voz_vale_so_no_servidor_que_escolheu(sessao, monkeypatch):
+    monkeypatch.setattr(config, "GEMINI_VOZ", "Algieba")
+    gemini.escolhe_voz(3, "Charon")
+    sessao.mensagens = [_msg(fim=True), _msg(fim=True), _msg(fim=True)]
+    try:
+        asyncio.run(gemini.responde(3, UM_SEGUNDO))
+        asyncio.run(gemini.responde(4, UM_SEGUNDO))
+        gemini.escolhe_voz(3, None)
+        asyncio.run(gemini.responde(3, UM_SEGUNDO))
+    finally:
+        gemini.escolhe_voz(3, None)
+
+    vozes = [c.speech_config.voice_config.prebuilt_voice_config.voice_name for c in sessao.configs]
+    assert vozes == ["Charon", "Algieba", "Algieba"]
+
+
+def test_voz_desconhecida_e_recusada():
+    with pytest.raises(ValueError):
+        gemini.escolhe_voz(3, "Jarvis")
+    assert gemini.voz_de(3) == config.GEMINI_VOZ
+
+
+def test_as_vozes_cabem_nas_opcoes_do_discord():
+    assert len(gemini.VOZES) + 1 <= 25  # + "a de sempre"
+
+
 # ── a fala ao vivo ───────────────────────────────────────────────────────────
 
 

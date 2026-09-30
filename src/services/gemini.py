@@ -55,6 +55,37 @@ _MESES = (
 
 _cliente = None
 
+# as vozes prontas do Live que o /voz oferece (o Discord aceita até 25 opções;
+# a 25ª é "voltar ao padrão"): nome → como soa
+VOZES = {
+    "Algieba": "masculina, suave",
+    "Charon": "masculina, grave e séria",
+    "Orus": "masculina, firme",
+    "Iapetus": "masculina, clara",
+    "Algenib": "masculina, rouca",
+    "Alnilam": "masculina, firme",
+    "Schedar": "masculina, equilibrada",
+    "Rasalgethi": "masculina, informativa",
+    "Sadaltager": "masculina, de quem entende",
+    "Enceladus": "masculina, calma",
+    "Umbriel": "masculina, tranquila",
+    "Achird": "masculina, amigável",
+    "Zubenelgenubi": "masculina, casual",
+    "Puck": "masculina, animada",
+    "Fenrir": "masculina, empolgada",
+    "Sadachbia": "masculina, viva",
+    "Zephyr": "feminina, luminosa",
+    "Kore": "feminina, firme",
+    "Leda": "feminina, jovem",
+    "Aoede": "feminina, leve",
+    "Callirrhoe": "feminina, tranquila",
+    "Autonoe": "feminina, clara",
+    "Despina": "feminina, suave",
+    "Erinome": "feminina, nítida",
+}
+# a voz escolhida no /voz, por servidor — some ao reiniciar (a fixa é GEMINI_VOZ)
+_voz_do_servidor: dict[int, str] = {}
+
 # o jeito de o Gemini tirar o bot da call quando o mandam embora com palavras
 # que a lista de core/intents não prevê
 _SAIR = "sair_da_call"
@@ -309,14 +340,29 @@ def esquece(guild_id: int) -> None:
     _historico.pop(guild_id, None)
 
 
-def _config(quem: str = ""):
+def escolhe_voz(guild_id: int, voz: str | None) -> None:
+    """A voz do bot neste servidor; None volta para a do .env."""
+    if voz is None:
+        _voz_do_servidor.pop(guild_id, None)
+        return
+    if voz not in VOZES:
+        raise ValueError(f"voz desconhecida: {voz}")
+    _voz_do_servidor[guild_id] = voz
+
+
+def voz_de(guild_id: int) -> str:
+    """A voz que o servidor ouve: a do /voz, senão a do .env ("" = a do Google)."""
+    return _voz_do_servidor.get(guild_id, config.GEMINI_VOZ)
+
+
+def _config(quem: str = "", voz: str = ""):
     from google.genai import types
 
     fala = None
-    if config.GEMINI_VOZ:
+    if voz:
         fala = types.SpeechConfig(
             voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=config.GEMINI_VOZ)
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voz)
             )
         )
     return types.LiveConnectConfig(
@@ -357,7 +403,7 @@ async def responde(
     async with (
         _sessoes,
         asyncio.timeout(_TEMPO_MAX_S),
-        _get_cliente().aio.live.connect(model=config.GEMINI_LIVE_MODEL, config=_config(quem)) as sessao,
+        _get_cliente().aio.live.connect(model=config.GEMINI_LIVE_MODEL, config=_config(quem, voz_de(guild_id))) as sessao,
     ):
         memoria = _memoria(guild_id)
         if memoria:

@@ -24,6 +24,7 @@ também aparece escrita no chat.
 | --- | --- |
 | `/entrar` | Entra no canal de voz em que você está e fica ouvindo |
 | `/sair` | Sai da call (ou peça por voz: *"Jarvis, sai da call"*) |
+| `/voz` | Troca a voz do bot neste servidor, na hora (até reiniciar; a fixa é o `GEMINI_VOZ`) |
 | `/ajuda` | O guia, dentro do Discord |
 
 ## Como usar na call

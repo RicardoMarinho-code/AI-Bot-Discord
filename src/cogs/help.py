@@ -10,6 +10,7 @@ _SECTIONS = [
         "`/entrar` — entro no canal de voz em que você está e fico ouvindo\n"
         "`/sair` — saio da call (ou fale "
         f'*"{m.NOME}, sai da call"*, *"{m.NOME}, pode ir embora"* ou *"{m.NOME}, tchau"*)\n'
+        "`/voz` — troco a minha voz neste servidor (masculinas e femininas)\n"
         "Se todo mundo sair, eu saio sozinho depois de 2 minutos.",
     ),
     (

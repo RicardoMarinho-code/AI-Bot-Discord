@@ -1,4 +1,4 @@
-"""/entrar e /sair: o bot entra na call de quem chamou, escuta e responde.
+"""/entrar, /sair e /voz: o bot entra na call de quem chamou, escuta e responde.
 
 NÃO usar `from __future__ import annotations` em cogs (quebra as Options).
 """
@@ -10,8 +10,14 @@ from discord.ext import commands
 import messages as m
 from core.assistente import entra_na_call, peek_assistente
 from core.listen import VoiceListener
+from services import gemini
 
 log = logging.getLogger(__name__)
+
+_PADRAO = "padrao"
+_ESCOLHAS = [
+    discord.OptionChoice(name=f"{nome} — {estilo}", value=nome) for nome, estilo in gemini.VOZES.items()
+] + [discord.OptionChoice(name="A de sempre (a do .env)", value=_PADRAO)]
 
 
 class Voice(commands.Cog):
@@ -61,6 +67,21 @@ class Voice(commands.Cog):
         await ctx.defer()
         await sessao.sai(f"/sair de {ctx.author.id}")
         await ctx.respond(m.LEFT)
+
+
+    @commands.slash_command(name="voz", description="Troco a voz com que eu falo neste servidor")
+    async def voz(
+        self,
+        ctx: discord.ApplicationContext,
+        nome: discord.Option(str, "a voz nova", choices=_ESCOLHAS),  # type: ignore[valid-type]
+    ) -> None:
+        # vale já na próxima pergunta: cada pergunta abre uma sessão Live nova
+        if nome == _PADRAO:
+            gemini.escolhe_voz(ctx.guild.id, None)
+            await ctx.respond(m.VOICE_RESET)
+            return
+        gemini.escolhe_voz(ctx.guild.id, nome)
+        await ctx.respond(m.VOICE_CHANGED.format(voz=nome, estilo=gemini.VOZES[nome]))
 
 
 def setup(bot: discord.Bot) -> None:

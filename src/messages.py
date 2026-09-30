@@ -23,6 +23,8 @@ LEFT = "👋 Saí da call. Quando precisar, é só `/entrar`."
 NOT_IN_CALL = "Eu nem tô numa call 😅 Use `/entrar` num canal de voz."
 AUTO_LEFT_EMPTY = "👋 Fiquei sozinho na call e saí. Chama de novo com `/entrar`!"
 VOICE_BYE = "👋 Falou! Até a próxima."
+VOICE_CHANGED = "🎙️ Pronto, agora eu falo com a voz **{voz}** ({estilo}). Me chama pra ouvir!"
+VOICE_RESET = "🎙️ Voltei para a minha voz de sempre."
 
 # ── Respostas ────────────────────────────────────────────────────────────────
 VOICE_ANSWER = '🗣️ **{quem}:** *"{pergunta}"*\n>>> {resposta}'
