@@ -22,7 +22,7 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 
@@ -148,7 +148,9 @@ def hora_em(fuso: str, momento: datetime | None = None) -> dict:
     base = momento or aqui
     la = base.astimezone(zona)
     # o mesmo instante nos dois lugares: o horário de verão de cada um conta
-    diferenca_h = (la.utcoffset() - base.astimezone(aqui.tzinfo).utcoffset()).total_seconds() / 3600
+    zero = timedelta(0)
+    diferenca = (la.utcoffset() or zero) - (base.astimezone(aqui.tzinfo).utcoffset() or zero)
+    diferenca_h = diferenca.total_seconds() / 3600
     return {
         "agora_la": descreve_agora(la),
         "diferenca_para_ca_em_horas": int(diferenca_h) if diferenca_h.is_integer() else diferenca_h,
@@ -549,7 +551,7 @@ async def responde(
                     # a saída de fato fica para quem chamou, depois de a fala tocar
                     chamadas = msg.tool_call.function_calls or []
                     resposta.quer_sair |= any(chamada.name == _SAIR for chamada in chamadas)
-                    chamadas_no_turno.extend(chamada.name for chamada in chamadas)
+                    chamadas_no_turno.extend(chamada.name or "" for chamada in chamadas)
                     retornos = []
                     for chamada in chamadas:
                         if chamada.name == _NA_CALL:
@@ -559,7 +561,7 @@ async def responde(
                         elif chamada.name == _CANCELA_LEMBRETES:
                             retorno = {"cancelados": lembretes.cancela(guild_id, user_id)}
                         else:
-                            retorno = executa_ferramenta(chamada.name, chamada.args)
+                            retorno = executa_ferramenta(chamada.name or "", chamada.args)
                         if chamada.name == _LEMBRETE and "erro" not in retorno:
                             resposta.lembretes.append(le_lembrete(chamada.args))
                         retornos.append(types.FunctionResponse(
