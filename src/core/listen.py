@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
+from discord import AllowedMentions
 from discord.sinks import Sink
 
 import config
@@ -849,6 +850,8 @@ class VoiceListener:
             )
         for segundos, lembrete in resposta.lembretes:
             self._agenda_lembrete(user_id, segundos, lembrete)
+        for pergunta, opcoes in resposta.enquetes:
+            await self._posta_enquete(quem, pergunta, opcoes)
         if resposta.quer_sair:
             # mandaram o bot embora de um jeito que a lista curta não pega
             # ("ninguém te chamou, vaza"): o Gemini entendeu e se despediu
@@ -891,6 +894,20 @@ class VoiceListener:
             vence_em=time.time() + segundos,
         ))
         log.info("⏰ [%s] lembrete agendado para daqui a %ds", user_id, segundos)
+
+    async def _posta_enquete(self, quem: str, pergunta: str, opcoes: list[str]) -> None:
+        """"Jarvis, faz uma enquete": a pergunta no chat, uma reação numerada por opção."""
+        linhas = "\n".join(f"{m.POLL_NUMBERS[i]} {opcao}" for i, opcao in enumerate(opcoes))
+        try:
+            # o texto vem do Gemini: um "@everyone" nele não pode marcar o servidor todo
+            msg = await self.text_channel.send(
+                m.POLL.format(quem=quem or "Alguém", pergunta=pergunta, opcoes=linhas),
+                allowed_mentions=AllowedMentions.none(),
+            )
+            for i in range(len(opcoes)):
+                await msg.add_reaction(m.POLL_NUMBERS[i])
+        except Exception:  # sem permissão de reagir, a enquete fica sem os botões — sem derrubar a conversa
+            log.warning("📊 não consegui postar a enquete", exc_info=True)
 
     # --- sair ---
 

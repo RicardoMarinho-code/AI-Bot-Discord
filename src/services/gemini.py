@@ -103,6 +103,9 @@ _aleatorio = random.SystemRandom()
 # "me avisa em 10 minutos": o aviso vai para o chat, marcando quem pediu
 _LEMBRETE = "criar_lembrete"
 _LEMBRETE_MIN_S = 5
+# "faz uma enquete: pizza ou hambúrguer?": quem chamou posta no chat, com reações
+_ENQUETE = "criar_enquete"
+ENQUETE_MAX_OPCOES = 10  # uma reação numerada por opção: 1️⃣ a 🔟
 _LEMBRETE_MAX_S = 24 * 3600  # o bot reinicia de vez em quando: mais que um dia se perderia
 # "quem tá na call?", "sorteia alguém daqui": o Gemini só conhece quem fala
 _NA_CALL = "quem_esta_na_call"
@@ -130,6 +133,8 @@ class Resposta:
     quer_sair: bool = False  # o Gemini entendeu que mandaram o bot embora (_SAIR)
     # (daqui a quantos segundos, o quê): quem chamou agenda (core/listen)
     lembretes: list[tuple[int, str]] = field(default_factory=list)
+    # (pergunta, opções): quem chamou posta no chat (core/listen)
+    enquetes: list[tuple[str, list[str]]] = field(default_factory=list)
 
 
 def agora() -> datetime:
@@ -230,6 +235,8 @@ def _instrucao(quem: str = "") -> str:
         f" Para saber quem está na call (ou sortear alguém daqui), use {_NA_CALL}."
         f" Se perguntarem pelos lembretes de quem fala, use {_MEUS_LEMBRETES}; para"
         f" cancelá-los, {_CANCELA_LEMBRETES}."
+        f" Para votações no grupo (\"faz uma enquete\"), use {_ENQUETE}: ela vai para o"
+        " chat com reações para votar."
         f" Quem fala tem um bloco de notas: {_ANOTAR} (\"anota: ...\"), {_MINHAS_NOTAS}"
         f" e {_APAGAR_NOTAS}; as notas também aparecem no /notas."
         f"\n\nAgora é {descreve_agora(agora())} (horário de {config.FUSO})."
@@ -237,6 +244,19 @@ def _instrucao(quem: str = "") -> str:
     if quem:
         texto += f"\nQuem está falando com você: {quem}."
     return texto
+
+
+def le_enquete(args: dict | None) -> tuple[str, list[str]]:
+    """(pergunta, opções) de um criar_enquete; ValueError se não der enquete."""
+    args = args or {}
+    pergunta = " ".join(str(args.get("pergunta") or "").split())[:200]
+    opcoes = [" ".join(str(o).split())[:80] for o in args.get("opcoes") or []]
+    opcoes = [o for o in opcoes if o]
+    if not pergunta:
+        raise ValueError("a enquete precisa de uma pergunta")
+    if not 2 <= len(opcoes) <= ENQUETE_MAX_OPCOES:
+        raise ValueError(f"a enquete precisa de 2 a {ENQUETE_MAX_OPCOES} opções")
+    return pergunta, opcoes
 
 
 def le_lembrete(args: dict | None) -> tuple[int, str]:
@@ -281,6 +301,9 @@ def executa_ferramenta(nome: str, args: dict | None) -> dict:
             minimo, maximo = sorted((int(args.get("minimo", 1)), int(args.get("maximo", 6))))
             quantidade = min(max(int(args.get("quantidade", 1)), 1), _SORTEIO_MAX)
             return {"numeros": [_aleatorio.randint(minimo, maximo) for _ in range(quantidade)]}
+        if nome == _ENQUETE:
+            le_enquete(args)
+            return {"resultado": "ok: a enquete vai para o chat agora, com reações para votar"}
         if nome == _LEMBRETE:
             segundos, _texto = le_lembrete(args)
             return {"resultado": f"ok: o aviso vai para o chat daqui a {segundos} segundos"}
@@ -384,6 +407,20 @@ def _ferramentas() -> list:
             types.FunctionDeclaration(
                 name=_CANCELA_LEMBRETES,
                 description="Cancela TODOS os lembretes pendentes de quem está falando.",
+            ),
+            types.FunctionDeclaration(
+                name=_ENQUETE,
+                description=(
+                    "Posta uma enquete no chat do Discord, com uma reação numerada por"
+                    f" opção para o pessoal votar. De 2 a {ENQUETE_MAX_OPCOES} opções."
+                ),
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "pergunta": types.Schema(type=types.Type.STRING, description="ex.: O que vamos jantar?"),
+                    "opcoes": types.Schema(
+                        type=types.Type.ARRAY, items=types.Schema(type=types.Type.STRING),
+                        description='ex.: ["pizza", "hambúrguer", "japonês"]',
+                    ),
+                }, required=["pergunta", "opcoes"]),
             ),
             types.FunctionDeclaration(
                 name=_ANOTAR,
@@ -630,6 +667,8 @@ async def responde(
                             retorno = executa_ferramenta(chamada.name or "", chamada.args)
                         if chamada.name == _LEMBRETE and "erro" not in retorno:
                             resposta.lembretes.append(le_lembrete(chamada.args))
+                        if chamada.name == _ENQUETE and "erro" not in retorno:
+                            resposta.enquetes.append(le_enquete(chamada.args))
                         retornos.append(types.FunctionResponse(
                             id=chamada.id, name=chamada.name, response=retorno,
                         ))

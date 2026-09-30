@@ -200,7 +200,7 @@ def test_resposta_chega_aos_pedacos_e_e_repassada_na_hora(sessao):
     assert [f.name for f in ferramenta.function_declarations] == [
         gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER, gemini._HORA_EM, gemini._SOBRE_A_DATA, gemini._CALCULAR, gemini._NA_CALL,
         gemini._MEUS_LEMBRETES, gemini._CANCELA_LEMBRETES,
-        gemini._ANOTAR, gemini._MINHAS_NOTAS, gemini._APAGAR_NOTAS, gemini._LEMBRETE,
+        gemini._ENQUETE, gemini._ANOTAR, gemini._MINHAS_NOTAS, gemini._APAGAR_NOTAS, gemini._LEMBRETE,
     ]
     assert not resposta.quer_sair
     # a pergunta vai marcada: início, áudio 16 kHz, fim
@@ -387,6 +387,58 @@ def test_cancelar_lembretes_por_voz_so_os_de_quem_fala(sessao, monkeypatch):
     [(_, kw)] = [e for e in sessao.enviado if e[0] == "ferramenta"]
     assert kw["function_responses"][0].response == {"cancelados": 2}
     assert [lem.texto for lem in lembretes.pendentes.values()] == ["do outro"]
+
+
+def test_enquete_pedida_por_voz_volta_na_resposta(sessao):
+    sessao.mensagens = [
+        _chama_ferramenta(gemini._ENQUETE, {"pergunta": "O que jantar?", "opcoes": ["pizza", " ", "japonês"]}),
+        _msg(falou="Enquete no chat!"), _msg(fim=True),
+    ]
+
+    resposta = asyncio.run(gemini.responde(11, UM_SEGUNDO))
+
+    assert resposta.enquetes == [("O que jantar?", ["pizza", "japonês"])]
+
+
+def test_enquete_sem_opcoes_suficientes_volta_como_erro():
+    assert "erro" in gemini.executa_ferramenta(gemini._ENQUETE, {"pergunta": "Sim?", "opcoes": ["sim"]})
+    assert "erro" in gemini.executa_ferramenta(gemini._ENQUETE, {"pergunta": "", "opcoes": ["a", "b"]})
+    muitas = [str(i) for i in range(gemini.ENQUETE_MAX_OPCOES + 1)]
+    assert "erro" in gemini.executa_ferramenta(gemini._ENQUETE, {"pergunta": "?", "opcoes": muitas})
+
+
+def test_enquete_vai_para_o_chat_com_uma_reacao_por_opcao(monkeypatch):
+    resposta = gemini.Resposta(
+        texto="Pronto.", segundos_de_fala=1.0, enquetes=[("O que jantar?", ["pizza", "japonês"])],
+    )
+    _responde_com(monkeypatch, resposta)
+    escuta = _listener()
+    postada = MagicMock()
+    postada.add_reaction = AsyncMock()
+    escuta.text_channel.send = AsyncMock(return_value=postada)
+
+    _conversa(escuta)
+
+    textos = [c.args[0] for c in escuta.text_channel.send.await_args_list]
+    enquete = next(t for t in textos if "Enquete" in t)
+    assert "Ricardo" in enquete and "O que jantar?" in enquete and "2️⃣ japonês" in enquete
+    assert [c.args[0] for c in postada.add_reaction.await_args_list] == ["1️⃣", "2️⃣"]
+    chamada = next(c for c in escuta.text_channel.send.await_args_list if "Enquete" in c.args[0])
+    mencoes = chamada.kwargs["allowed_mentions"]
+    assert not mencoes.everyone and not mencoes.users and not mencoes.roles
+
+
+def test_enquete_sem_permissao_de_reagir_nao_derruba_a_conversa(monkeypatch):
+    resposta = gemini.Resposta(texto="Pronto.", segundos_de_fala=1.0, enquetes=[("?", ["a", "b"])])
+    _responde_com(monkeypatch, resposta)
+    escuta = _listener()
+    postada = MagicMock()
+    postada.add_reaction = AsyncMock(side_effect=RuntimeError("Missing Permissions"))
+    escuta.text_channel.send = AsyncMock(return_value=postada)
+
+    _conversa(escuta)  # não levanta
+
+    assert escuta.text_channel.send.await_count >= 1
 
 
 def test_le_lembrete_arredonda_e_corta_o_texto():

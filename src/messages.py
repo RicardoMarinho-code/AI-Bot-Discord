@@ -30,6 +30,8 @@ FORGOT = "🧽 Pronto, esqueci a nossa conversa. A próxima pergunta começa do 
 # ── Respostas ────────────────────────────────────────────────────────────────
 VOICE_ANSWER = '🗣️ **{quem}:** *"{pergunta}"*\n>>> {resposta}'
 VOICE_ANSWER_FAILED = "😵 Não consegui responder agora. Pergunta de novo daqui a pouco?"
+POLL = "📊 **Enquete** (pedida por {quem}): **{pergunta}**\n{opcoes}\n-# Vote na reação!"
+POLL_NUMBERS = ("1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟")
 REMINDER = "⏰ {mencao}, lembrete: **{texto}**"
 REMINDER_SEM_TEXTO = "deu a hora que você pediu"
 REMINDERS_NONE = f'Você não tem lembretes pendentes. Pede um: **"{NOME}, me avisa em 10 minutos"** ⏰'
