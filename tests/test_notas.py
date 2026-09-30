@@ -1,7 +1,7 @@
 """Anotações por voz ("Jarvis, anota: ...") e o /notas."""
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -70,7 +70,7 @@ def test_comando_notas_lista_numerado_so_para_quem_pediu():
     notas.anota(1, 7, "ração do gato")
     ctx = _ctx()
 
-    asyncio.run(Notas.notas.callback(Notas(None), ctx, False))
+    asyncio.run(Notas.notas.callback(Notas(MagicMock()), ctx, False))
 
     ctx.respond.assert_awaited_once_with(
         m.NOTES_LIST.format(lista="1. comprar pão\n2. ração do gato"), ephemeral=True,
@@ -80,9 +80,9 @@ def test_comando_notas_lista_numerado_so_para_quem_pediu():
 def test_comando_notas_apagar_e_vazio():
     notas.anota(1, 7, "comprar pão")
     ctx = _ctx()
-    asyncio.run(Notas.notas.callback(Notas(None), ctx, True))
+    asyncio.run(Notas.notas.callback(Notas(MagicMock()), ctx, True))
     ctx.respond.assert_awaited_once_with(m.NOTES_DELETED.format(n=1), ephemeral=True)
 
     ctx = _ctx()
-    asyncio.run(Notas.notas.callback(Notas(None), ctx, False))
+    asyncio.run(Notas.notas.callback(Notas(MagicMock()), ctx, False))
     ctx.respond.assert_awaited_once_with(m.NOTES_NONE, ephemeral=True)
