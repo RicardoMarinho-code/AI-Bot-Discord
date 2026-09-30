@@ -198,7 +198,7 @@ def test_resposta_chega_aos_pedacos_e_e_repassada_na_hora(sessao):
     [busca, ferramenta] = sessao.configs[0].tools
     assert busca.google_search is not None
     assert [f.name for f in ferramenta.function_declarations] == [
-        gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER, gemini._HORA_EM, gemini._CALCULAR, gemini._NA_CALL,
+        gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER, gemini._HORA_EM, gemini._SOBRE_A_DATA, gemini._CALCULAR, gemini._NA_CALL,
         gemini._MEUS_LEMBRETES, gemini._CANCELA_LEMBRETES, gemini._LEMBRETE,
     ]
     assert not resposta.quer_sair
@@ -404,6 +404,22 @@ def test_hora_em_outro_fuso(monkeypatch):
 
     assert toquio == {"agora_la": "quinta-feira, 1 de outubro de 2026, 08:00", "diferenca_para_ca_em_horas": 12}
     assert gemini.hora_em("Asia/Kolkata", momento)["diferenca_para_ca_em_horas"] == 8.5
+
+
+def test_quantos_dias_faltam_e_o_dia_da_semana():
+    from datetime import date
+
+    natal = gemini.sobre_a_data("2026-12-25", hoje=date(2026, 9, 30))
+
+    assert natal == {"dias_ate_la": 86, "semanas_e_dias": [12, 2], "dia_da_semana": "sexta-feira"}
+
+
+def test_data_que_ja_passou_e_data_invalida():
+    from datetime import date
+
+    assert gemini.sobre_a_data("2026-09-01", hoje=date(2026, 9, 30))["dias_ate_la"] == -29
+    assert "erro" in gemini.sobre_a_data("25/12")
+    assert "erro" in gemini.executa_ferramenta(gemini._SOBRE_A_DATA, {"data": "2026-02-30"})
 
 
 def test_hora_em_fuso_que_nao_existe():

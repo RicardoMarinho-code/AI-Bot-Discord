@@ -59,6 +59,8 @@ também aparece escrita no chat.
   sai de um sorteio no computador, não da cabeça da IA.
 - **Hora pelo mundo:** *"Jarvis, que horas são em Tóquio?"*, com o horário de
   verão de cada lugar.
+- **Datas:** *"Jarvis, quantos dias faltam pro Natal?"*, *"que dia da semana
+  cai 15 de novembro?"*.
 - **Contas certas:** *"Jarvis, quanto é 15% de 1.250?"*, *"raiz de 2 vezes 7"*.
   A conta sai de uma calculadora, não da cabeça da IA (que erra).
 - **Quem está na call:** *"Jarvis, quem tá aqui?"*, *"sorteia alguém da call

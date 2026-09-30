@@ -22,7 +22,7 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import numpy as np
 
@@ -113,6 +113,8 @@ _CANCELA_LEMBRETES = "cancelar_meus_lembretes"
 _CALCULAR = "calcular"
 # "que horas são em Tóquio?": conversão de fuso de cabeça erra o horário de verão
 _HORA_EM = "hora_em"
+# "quantos dias faltam pro Natal?", "que dia da semana cai 15/11?": o modelo erra
+_SOBRE_A_DATA = "sobre_a_data"
 
 
 @dataclass
@@ -154,6 +156,20 @@ def hora_em(fuso: str, momento: datetime | None = None) -> dict:
     return {
         "agora_la": descreve_agora(la),
         "diferenca_para_ca_em_horas": int(diferenca_h) if diferenca_h.is_integer() else diferenca_h,
+    }
+
+
+def sobre_a_data(data: str, hoje: date | None = None) -> dict:
+    """Quantos dias faltam (negativo: passaram) até `data` (AAAA-MM-DD) e o dia da semana."""
+    try:
+        alvo = date.fromisoformat(data.strip())
+    except ValueError:
+        return {"erro": f"data inválida: {data} (use AAAA-MM-DD, ex.: 2026-12-25)"}
+    dias = (alvo - (hoje or agora().date())).days
+    return {
+        "dias_ate_la": dias,
+        "semanas_e_dias": [dias // 7, dias % 7] if dias >= 0 else None,
+        "dia_da_semana": _DIAS[alvo.weekday()],
     }
 
 
@@ -201,7 +217,8 @@ def _instrucao(quem: str = "") -> str:
         f" Para sortear números, jogar dados, cara ou coroa ou escolher entre opções,"
         f" use as ferramentas {_SORTEAR} e {_ESCOLHER} e diga o resultado que elas"
         " derem — nunca invente um sorteio de cabeça."
-        f" Para a hora em outra cidade ou país, use {_HORA_EM}."
+        f" Para a hora em outra cidade ou país, use {_HORA_EM}; para quantos dias"
+        f" faltam (ou passaram) até uma data e o dia da semana dela, {_SOBRE_A_DATA}."
         f" Para qualquer conta que não seja trivial, use {_CALCULAR} e fale o"
         " resultado dela (arredondado de um jeito natural para ouvir)."
         f" Para lembretes e timers de quem está falando (\"me avisa em 10 minutos\"),"
@@ -247,6 +264,8 @@ def executa_ferramenta(nome: str, args: dict | None) -> dict:
         if nome == _LEMBRETE:
             segundos, _texto = le_lembrete(args)
             return {"resultado": f"ok: o aviso vai para o chat daqui a {segundos} segundos"}
+        if nome == _SOBRE_A_DATA:
+            return sobre_a_data(str(args.get("data", "")))
         if nome == _HORA_EM:
             return hora_em(str(args.get("fuso", "")))
         if nome == _CALCULAR:
@@ -309,6 +328,16 @@ def _ferramentas() -> list:
                 parameters=types.Schema(type=types.Type.OBJECT, properties={
                     "fuso": types.Schema(type=types.Type.STRING, description="nome IANA, ex.: Asia/Tokyo"),
                 }, required=["fuso"]),
+            ),
+            types.FunctionDeclaration(
+                name=_SOBRE_A_DATA,
+                description=(
+                    "Quantos dias faltam até uma data (negativo se já passou) e o dia da"
+                    " semana dela. Se a pessoa não disser o ano, use a próxima ocorrência."
+                ),
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "data": types.Schema(type=types.Type.STRING, description="AAAA-MM-DD, ex.: 2026-12-25"),
+                }, required=["data"]),
             ),
             types.FunctionDeclaration(
                 name=_CALCULAR,
