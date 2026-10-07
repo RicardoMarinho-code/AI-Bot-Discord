@@ -41,6 +41,26 @@ class Lifecycle(commands.Cog):
             sessao.schedule_empty_leave()
         else:
             sessao.cancel_empty_leave()
+        await self._passa_o_controle_se_o_dono_saiu(sessao, member, before, after)
+
+    async def _passa_o_controle_se_o_dono_saiu(self, sessao, member, before, after) -> None:
+        """O dono saiu da call do bot: quem ficou assume, e o chat fica sabendo."""
+        canal_do_bot = sessao.voice.channel if sessao.voice else None
+        if member.id != sessao.dono_id or before.channel is None or before.channel != canal_do_bot:
+            return
+        if after.channel == before.channel:
+            return  # mutou, desmutou, ligou a câmera: continua na call
+        novo = sessao.passa_o_controle()
+        log.info("[%s] o dono saiu da call — o controle passou para %s", member.guild.id, novo)
+        if novo is None or sessao.text_channel is None:
+            return
+        try:
+            await sessao.text_channel.send(
+                m.OWNER_TRANSFERRED.format(novo=f"<@{novo}>"),
+                allowed_mentions=discord.AllowedMentions(users=[discord.Object(novo)]),
+            )
+        except discord.HTTPException:
+            log.warning("[%s] não consegui avisar quem passou a mandar", member.guild.id)
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild: discord.Guild) -> None:

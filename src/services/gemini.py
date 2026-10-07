@@ -94,6 +94,13 @@ _ARQUIVO_VOZES = os.path.join("data", "vozes.json")
 # o jeito de o Gemini tirar o bot da call quando o mandam embora com palavras
 # que a lista de core/intents não prevê
 _SAIR = "sair_da_call"
+# quem manda no bot (core/assistente): o dono da sessão muda o modo e libera
+# ou bloqueia pessoas por voz; a ferramenta recusa se quem pediu não é o dono
+_MODO = "modo_da_conversa"
+_LIBERAR = "liberar_pessoa"
+_BLOQUEAR = "bloquear_pessoa"
+_CONTROLE = {_MODO: "modo", _LIBERAR: "liberar", _BLOQUEAR: "bloquear"}
+_SO_O_DONO = "só quem te chamou para a call (o dono) pode fazer isso: explique com educação"
 # sorteios de verdade: o modelo "sorteando" de cabeça repete sempre os mesmos
 # números (o 7, o 42) e a moeda quase sempre dá cara
 _SORTEAR = "sortear_numero"
@@ -232,6 +239,10 @@ def _instrucao(quem: str = "") -> str:
         f" quer conversar sem você —, use a ferramenta {_SAIR} e se despeça numa"
         " frase bem curta. Só quando for um pedido para VOCÊ ir embora: \"sai mais"
         ' barato?" ou "como se diz tchau em inglês?" são perguntas.'
+        " Quem te chamou para a call é o dono da conversa: só ele te tira da call,"
+        f" muda o modo ({_MODO}: \"aberto\" = todos da call falam com você, \"dono\" ="
+        f" só ele e quem ele liberar) e libera ou bloqueia pessoas ({_LIBERAR},"
+        f" {_BLOQUEAR}). Se outra pessoa pedir, a ferramenta recusa: explique com educação."
         f" Para sortear números, jogar dados, cara ou coroa ou escolher entre opções,"
         f" use as ferramentas {_SORTEAR} e {_ESCOLHER} e diga o resultado que elas"
         " derem — nunca invente um sorteio de cabeça."
@@ -416,6 +427,30 @@ def _ferramentas() -> list:
                     "Sai da call de voz do Discord. Use quando a pessoa pedir ou mandar"
                     " você ir embora, te expulsar ou dispensar da call."
                 ),
+            ),
+            types.FunctionDeclaration(
+                name=_MODO,
+                description=(
+                    "Muda com quem você conversa na call: \"aberto\" (todo mundo) ou"
+                    " \"dono\" (só quem te chamou e quem ele liberar). Só o dono pode."
+                ),
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "modo": types.Schema(type=types.Type.STRING, enum=["aberto", "dono"]),
+                }, required=["modo"]),
+            ),
+            types.FunctionDeclaration(
+                name=_LIBERAR,
+                description="Deixa uma pessoa da call falar com você (no modo dono). Só o dono pode.",
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "nome": types.Schema(type=types.Type.STRING, description="o nome como foi dito"),
+                }, required=["nome"]),
+            ),
+            types.FunctionDeclaration(
+                name=_BLOQUEAR,
+                description="Passa a ignorar uma pessoa da call, em qualquer modo. Só o dono pode.",
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "nome": types.Schema(type=types.Type.STRING, description="o nome como foi dito"),
+                }, required=["nome"]),
             ),
             types.FunctionDeclaration(
                 name=_SORTEAR,
@@ -721,6 +756,9 @@ async def responde(
     ao_falar: Callable[[bytes], None] | None = None,
     na_call: Callable[[], Awaitable[list[str]]] | None = None,
     user_id: int = 0,
+    texto: str | None = None,
+    manda: bool = True,
+    controle: Callable[[str, str], Awaitable[dict]] | None = None,
 ) -> Resposta:
     """A pergunta falada (PCM do Discord) → a resposta, falada e transcrita.
 
@@ -729,12 +767,16 @@ async def responde(
     quem fala. `na_call()`: os nomes de quem está na call — só chamada se o
     Gemini perguntar (buscar os nomes pode ir à API do Discord). `user_id`: de
     quem são os lembretes que o Gemini lista ou cancela.
+
+    `texto`: a pergunta escrita (o /perguntar) no lugar do áudio. `manda`: quem
+    pergunta é o dono da sessão (pode tirar o bot da call, mudar o modo...);
+    `controle(acao, valor)`: aplica o que o dono pediu (Assistente.controle).
     """
     from google.genai import types
 
-    entrada = await asyncio.to_thread(pcm_discord_para_16k, pcm)
+    entrada = b"" if texto is not None else await asyncio.to_thread(pcm_discord_para_16k, pcm)
     resposta = Resposta()
-    texto: list[str] = []
+    falado: list[str] = []
     pergunta: list[str] = []
     chamadas_no_turno: list[str] = []
     async with (
@@ -743,17 +785,22 @@ async def responde(
         _get_cliente().aio.live.connect(model=config.GEMINI_LIVE_MODEL, config=_config(quem, voz_de(guild_id))) as sessao,
     ):
         memoria = _memoria(guild_id)
-        if memoria:
-            await sessao.send_client_content(turns=memoria, turn_complete=False)
-        await sessao.send_realtime_input(activity_start=types.ActivityStart())
-        for i in range(0, len(entrada), _PEDACO_ENTRADA):
-            await sessao.send_realtime_input(
-                audio=types.Blob(
-                    data=entrada[i : i + _PEDACO_ENTRADA],
-                    mime_type=f"audio/pcm;rate={_TAXA_ENTRADA}",
+        if texto is not None:
+            # pergunta escrita: vai como mais um turno da conversa, e o turno fecha
+            pedido = types.Content(role="user", parts=[types.Part(text=texto)])
+            await sessao.send_client_content(turns=[*memoria, pedido], turn_complete=True)
+        else:
+            if memoria:
+                await sessao.send_client_content(turns=memoria, turn_complete=False)
+            await sessao.send_realtime_input(activity_start=types.ActivityStart())
+            for i in range(0, len(entrada), _PEDACO_ENTRADA):
+                await sessao.send_realtime_input(
+                    audio=types.Blob(
+                        data=entrada[i : i + _PEDACO_ENTRADA],
+                        mime_type=f"audio/pcm;rate={_TAXA_ENTRADA}",
+                    )
                 )
-            )
-        await sessao.send_realtime_input(activity_end=types.ActivityEnd())
+            await sessao.send_realtime_input(activity_end=types.ActivityEnd())
         enviado = time.monotonic()
 
         async def ouve_turno() -> None:
@@ -768,11 +815,24 @@ async def responde(
                 if msg.tool_call:
                     # a saída de fato fica para quem chamou, depois de a fala tocar
                     chamadas = msg.tool_call.function_calls or []
-                    resposta.quer_sair |= any(chamada.name == _SAIR for chamada in chamadas)
+                    # quem não manda não tira o bot da call: a ferramenta recusa abaixo
+                    resposta.quer_sair |= manda and any(chamada.name == _SAIR for chamada in chamadas)
                     chamadas_no_turno.extend(chamada.name or "" for chamada in chamadas)
                     retornos = []
                     for chamada in chamadas:
-                        if chamada.name == _NA_CALL:
+                        if chamada.name == _SAIR and not manda:
+                            retorno = {"erro": _SO_O_DONO}
+                        elif chamada.name in _CONTROLE:
+                            if not manda:
+                                retorno = {"erro": _SO_O_DONO}
+                            elif controle is None:
+                                retorno = {"erro": "isso só funciona com você numa call"}
+                            else:
+                                args = chamada.args or {}
+                                retorno = await controle(
+                                    _CONTROLE[chamada.name], str(args.get("modo") or args.get("nome") or ""),
+                                )
+                        elif chamada.name == _NA_CALL:
                             retorno = {"pessoas": await na_call() if na_call is not None else []}
                         elif chamada.name == _TIMES:
                             args = chamada.args or {}
@@ -809,7 +869,7 @@ async def responde(
                 if conteudo.input_transcription and conteudo.input_transcription.text:
                     pergunta.append(conteudo.input_transcription.text)
                 if conteudo.output_transcription and conteudo.output_transcription.text:
-                    texto.append(conteudo.output_transcription.text)
+                    falado.append(conteudo.output_transcription.text)
                 if conteudo.turn_complete:
                     return
 
@@ -832,15 +892,17 @@ async def responde(
         # a transcrição da PERGUNTA às vezes chega em pedaços e o último depois
         # do fim do turno (visto em 27/09: o chat mostrou "que dia é hoje e",
         # sem o resto). O áudio já tocou; só a mensagem do chat espera isto.
-        try:
-            async with asyncio.timeout(_TRANSCRICAO_ATRASADA_S):
-                async for msg in sessao.receive():
-                    conteudo = msg.server_content
-                    if conteudo and conteudo.input_transcription and conteudo.input_transcription.text:
-                        pergunta.append(conteudo.input_transcription.text)
-        except TimeoutError:
-            pass
-    resposta.texto = "".join(texto).strip()
-    resposta.pergunta = "".join(pergunta).strip()
+        # Pergunta escrita não tem transcrição a esperar.
+        if texto is None:
+            try:
+                async with asyncio.timeout(_TRANSCRICAO_ATRASADA_S):
+                    async for msg in sessao.receive():
+                        conteudo = msg.server_content
+                        if conteudo and conteudo.input_transcription and conteudo.input_transcription.text:
+                            pergunta.append(conteudo.input_transcription.text)
+            except TimeoutError:
+                pass
+    resposta.texto = "".join(falado).strip()
+    resposta.pergunta = texto.strip() if texto is not None else "".join(pergunta).strip()
     _lembra(guild_id, resposta.pergunta, resposta.texto)
     return resposta

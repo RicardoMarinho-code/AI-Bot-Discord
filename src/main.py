@@ -122,6 +122,8 @@ def main() -> None:
         "cogs.registro",
         "cogs.status",
         "cogs.notas",
+        "cogs.sessao",
+        "cogs.chat",
     ):
         bot.load_extension(extension)
 

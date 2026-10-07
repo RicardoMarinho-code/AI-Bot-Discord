@@ -194,14 +194,19 @@ def test_resposta_chega_aos_pedacos_e_e_repassada_na_hora(sessao):
     assert resposta.texto == "É Paris." and resposta.pergunta == "capital da França?"
     assert resposta.segundos_de_fala == pytest.approx(0.2)
     assert "Ricardo" in sessao.configs[0].system_instruction
-    # as ferramentas: pesquisa Google (internet), sair da call e os sorteios
+    # as ferramentas: pesquisa Google (internet) e as nossas — todas declaradas,
+    # sem repetir nome (a ordem não importa ao Gemini)
     [busca, ferramenta] = sessao.configs[0].tools
     assert busca.google_search is not None
-    assert [f.name for f in ferramenta.function_declarations] == [
-        gemini._SAIR, gemini._SORTEAR, gemini._ESCOLHER, gemini._HORA_EM, gemini._SOBRE_A_DATA, gemini._CALCULAR, gemini._NA_CALL,
-        gemini._MEUS_LEMBRETES, gemini._CANCELA_LEMBRETES,
-        gemini._ENQUETE, gemini._CRONOMETRO, gemini._PLACAR, gemini._ANOTAR, gemini._MINHAS_NOTAS, gemini._APAGAR_NOTAS, gemini._TIMES, gemini._LEMBRETE,
-    ]
+    nomes = [f.name for f in ferramenta.function_declarations]
+    assert len(nomes) == len(set(nomes))
+    assert set(nomes) == {
+        gemini._SAIR, gemini._MODO, gemini._LIBERAR, gemini._BLOQUEAR,
+        gemini._SORTEAR, gemini._ESCOLHER, gemini._HORA_EM, gemini._SOBRE_A_DATA, gemini._CALCULAR,
+        gemini._NA_CALL, gemini._MEUS_LEMBRETES, gemini._CANCELA_LEMBRETES, gemini._ENQUETE,
+        gemini._CRONOMETRO, gemini._PLACAR, gemini._ANOTAR, gemini._MINHAS_NOTAS, gemini._APAGAR_NOTAS,
+        gemini._TIMES, gemini._LEMBRETE,
+    }
     assert not resposta.quer_sair
     # a pergunta vai marcada: início, áudio 16 kHz, fim
     tipos = [next(iter(kw)) for _, kw in sessao.enviado]

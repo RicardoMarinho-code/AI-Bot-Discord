@@ -73,4 +73,4 @@ def test_comando_responde_so_para_quem_pediu(monkeypatch):
 
     asyncio.run(status.Status.status.callback(cog, ctx))
 
-    assert ctx.respond.await_args.kwargs == {"ephemeral": True}
+    assert ctx.respond.await_args.kwargs["ephemeral"] is True

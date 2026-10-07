@@ -30,6 +30,14 @@ class Voice(commands.Cog):
         description=f'Entro na sua call e fico ouvindo: me chame com "{m.NOME}, ..."',
     )
     async def entrar(self, ctx: discord.ApplicationContext) -> None:
+        atual = peek_assistente(ctx.guild.id)
+        if atual is not None and atual.conectado() and not atual.manda(ctx.author.id):
+            # o /entrar de outra pessoa arrastaria o bot para a call dela no meio da conversa
+            await ctx.respond(
+                m.OWNER_ONLY_MOVE.format(dono=f"<@{atual.dono_id}>"),
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return
         await ctx.defer()
         try:
             sessao = await entra_na_call(ctx)
@@ -43,6 +51,7 @@ class Voice(commands.Cog):
             await ctx.respond(m.CONN_DROPPED)
             return
         sessao.text_channel = ctx.channel
+        sessao.assume(ctx.author.id)  # quem chamou manda (se não há outro dono na call)
         if sessao.escuta is not None and sessao.escuta.active:
             # já estava escutando (talvez em outro canal): só muda onde responde
             sessao.escuta.text_channel = ctx.channel
@@ -65,6 +74,12 @@ class Voice(commands.Cog):
         if sessao is None or not sessao.conectado():
             await ctx.respond(m.NOT_IN_CALL, ephemeral=True)
             return
+        if not sessao.manda(ctx.author.id):
+            await ctx.respond(
+                m.OWNER_ONLY.format(dono=f"<@{sessao.dono_id}>"),
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return
         await ctx.defer()
         await sessao.sai(f"/sair de {ctx.author.id}")
         await ctx.respond(m.LEFT)
@@ -76,6 +91,13 @@ class Voice(commands.Cog):
         ctx: discord.ApplicationContext,
         nome: discord.Option(str, "a voz nova", choices=_ESCOLHAS),  # type: ignore[valid-type]
     ) -> None:
+        sessao = peek_assistente(ctx.guild.id)
+        if sessao is not None and sessao.conectado() and not sessao.manda(ctx.author.id):
+            await ctx.respond(
+                m.OWNER_ONLY.format(dono=f"<@{sessao.dono_id}>"),
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return
         # vale já na próxima pergunta: cada pergunta abre uma sessão Live nova
         if nome == _PADRAO:
             gemini.escolhe_voz(ctx.guild.id, None)

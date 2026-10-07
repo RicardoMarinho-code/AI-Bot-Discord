@@ -10,7 +10,7 @@ from discord.ext import commands
 import config
 import messages as m
 from core import lembretes
-from core.assistente import peek_assistente
+from core.assistente import MODO_DONO, peek_assistente
 from services import gemini
 
 _NO_AR_DESDE = time.time()  # carregado no boot: "no ar há 3h"
@@ -42,6 +42,14 @@ def _jogo(guild_id: int) -> str:
     return linhas
 
 
+def _dono(sessao) -> str:
+    """Quem manda e o modo, só com o bot numa call (fora dela não há dono)."""
+    if sessao is None or not sessao.conectado() or not isinstance(sessao.dono_id, int):
+        return ""
+    modo = "só o dono" if sessao.modo == MODO_DONO else "aberto"
+    return m.STATUS_OWNER.format(dono=f"<@{sessao.dono_id}>", modo=modo)
+
+
 def descreve(bot: discord.Bot, guild_id: int) -> str:
     sessao = peek_assistente(guild_id)
     if sessao is not None and sessao.conectado():
@@ -56,6 +64,7 @@ def descreve(bot: discord.Bot, guild_id: int) -> str:
         trocas=len(gemini._memoria(guild_id)) // 2,  # pergunta + resposta
         lembretes=pendentes,
         jogo=_jogo(guild_id),
+        dono=_dono(sessao),
         ping=round(bot.latency * 1000) if bot.latency == bot.latency else "?",  # NaN antes de conectar
         no_ar=ha_quanto(time.time() - _NO_AR_DESDE),
         modelo=config.GEMINI_LIVE_MODEL,
@@ -68,7 +77,9 @@ class Status(commands.Cog):
 
     @commands.slash_command(name="status", description="Como eu estou neste servidor: call, voz, memória, lembretes")
     async def status(self, ctx: discord.ApplicationContext) -> None:
-        await ctx.respond(descreve(self.bot, ctx.guild.id), ephemeral=True)
+        await ctx.respond(
+            descreve(self.bot, ctx.guild.id), ephemeral=True, allowed_mentions=discord.AllowedMentions.none(),
+        )
 
 
 def setup(bot: discord.Bot) -> None:

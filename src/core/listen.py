@@ -481,6 +481,8 @@ class VoiceListener:
             cedo = buffer.cedo
             if cedo.achou is not None or cedo.tarefa is not None or user_id in self._montando:
                 continue  # já sabe, já está olhando, ou é continuação de pergunta
+            if not self.assistente.pode_falar(user_id):
+                continue  # modo dono ou bloqueado: nem o estalo
             if cedo.checado_s >= _CEDO_ATE_S:
                 cedo.achou = False
                 continue
@@ -544,6 +546,10 @@ class VoiceListener:
         duracao = len(pcm) / BYTES_PER_SECOND
         if time.monotonic() - born > STALE_SEGMENT_S:
             log.info("🎙️ [%s] trecho de %.1fs descartado: transcrição atrasada", user_id, duracao)
+            return
+        if not self.assistente.pode_falar(user_id):
+            # modo dono (ou bloqueado): nem transcreve — economiza o STT e a privacidade
+            _debug(f"🎙️ trecho de user={user_id} ignorado: o bot não escuta essa pessoa agora")
             return
         bruto = pcm
         hot, pcm = await asyncio.to_thread(analyze_speech, pcm, config.VOICE_MIN_RMS)
@@ -633,7 +639,10 @@ class VoiceListener:
         elif acao == "cala":
             self._interrompe_conversa()
         elif acao == "sai":
-            await self._sai(user_id)
+            if self.assistente.manda(user_id):
+                await self._sai(user_id)
+            else:
+                await self._so_o_dono()
         else:
             self._comeca_pergunta(user_id, text, pcm, born)
 
@@ -799,6 +808,7 @@ class VoiceListener:
                 resposta = await gemini.responde(
                     self.assistente.guild.id, pcm, quem=quem, ao_falar=ao_falar,
                     na_call=self.assistente.nomes_na_call, user_id=user_id,
+                    manda=self.assistente.manda(user_id), controle=self.assistente.controle,
                 )
             except Exception as exc:  # noqa: BLE001 — a segunda chance decide abaixo
                 if comecou_s is not None or time.monotonic() - inicio > _SEGUNDA_CHANCE_ATE_S:
@@ -814,6 +824,7 @@ class VoiceListener:
                 resposta = await gemini.responde(
                     self.assistente.guild.id, pcm, quem=quem, ao_falar=ao_falar,
                     na_call=self.assistente.nomes_na_call, user_id=user_id,
+                    manda=self.assistente.manda(user_id), controle=self.assistente.controle,
                 )
         except Exception as exc:  # noqa: BLE001 — pergunta perdida não derruba a escuta
             # %s e não %r: nunca arriscar a chave num repr de erro de rede
@@ -848,10 +859,7 @@ class VoiceListener:
             log.info(
                 "🗣️ [%s] o Gemini ouviu %r e respondeu %r", user_id, resposta.pergunta, resposta.texto,
             )
-        for segundos, lembrete in resposta.lembretes:
-            self._agenda_lembrete(user_id, segundos, lembrete)
-        for pergunta, opcoes in resposta.enquetes:
-            await self._posta_enquete(quem, pergunta, opcoes)
+        await aplica_extras(resposta, self.text_channel, self.assistente.guild.id, user_id, quem)
         if resposta.quer_sair:
             # mandaram o bot embora de um jeito que a lista curta não pega
             # ("ninguém te chamou, vaza"): o Gemini entendeu e se despediu
@@ -885,31 +893,22 @@ class VoiceListener:
             ))
 
     def _agenda_lembrete(self, user_id: int, segundos: float, texto: str) -> None:
-        """"Jarvis, me avisa em 10 minutos": daqui a `segundos`, marca a pessoa no chat."""
-        lembretes.agenda(self.text_channel, lembretes.Lembrete(
-            guild_id=self.assistente.guild.id,
-            user_id=user_id,
-            channel_id=int(getattr(self.text_channel, "id", 0) or 0),
-            texto=texto or m.REMINDER_SEM_TEXTO,
-            vence_em=time.time() + segundos,
-        ))
-        log.info("⏰ [%s] lembrete agendado para daqui a %ds", user_id, segundos)
+        agenda_lembrete(self.text_channel, self.assistente.guild.id, user_id, segundos, texto)
 
     async def _posta_enquete(self, quem: str, pergunta: str, opcoes: list[str]) -> None:
-        """"Jarvis, faz uma enquete": a pergunta no chat, uma reação numerada por opção."""
-        linhas = "\n".join(f"{m.POLL_NUMBERS[i]} {opcao}" for i, opcao in enumerate(opcoes))
-        try:
-            # o texto vem do Gemini: um "@everyone" nele não pode marcar o servidor todo
-            msg = await self.text_channel.send(
-                m.POLL.format(quem=quem or "Alguém", pergunta=pergunta, opcoes=linhas),
-                allowed_mentions=AllowedMentions.none(),
-            )
-            for i in range(len(opcoes)):
-                await msg.add_reaction(m.POLL_NUMBERS[i])
-        except Exception:  # sem permissão de reagir, a enquete fica sem os botões — sem derrubar a conversa
-            log.warning("📊 não consegui postar a enquete", exc_info=True)
+        await posta_enquete(self.text_channel, quem, pergunta, opcoes)
 
     # --- sair ---
+
+    async def _so_o_dono(self) -> None:
+        """Quem não manda pediu para o bot sair: ele fica, e diz quem pode."""
+        try:
+            await self.text_channel.send(
+                m.OWNER_ONLY.format(dono=f"<@{self.assistente.dono_id}>"),
+                allowed_mentions=AllowedMentions.none(),
+            )
+        except Exception:  # o aviso não é essencial
+            log.warning("🎙️ não consegui avisar quem manda", exc_info=True)
 
     async def _sai(self, user_id: int) -> None:
         await self.assistente.espera_efeito()
@@ -919,3 +918,41 @@ class VoiceListener:
         except Exception:  # noqa: BLE001 — a despedida não impede a saída
             log.warning("🎙️ não consegui me despedir no chat", exc_info=True)
         await self.assistente.sai(f"pedido por voz de {user_id}")
+
+
+# --- o que a resposta pediu além da fala (vale para a voz e para o /perguntar) ---
+
+
+def agenda_lembrete(canal, guild_id: int, user_id: int, segundos: float, texto: str) -> None:
+    """"Jarvis, me avisa em 10 minutos": daqui a `segundos`, marca a pessoa no canal."""
+    lembretes.agenda(canal, lembretes.Lembrete(
+        guild_id=guild_id,
+        user_id=user_id,
+        channel_id=int(getattr(canal, "id", 0) or 0),
+        texto=texto or m.REMINDER_SEM_TEXTO,
+        vence_em=time.time() + segundos,
+    ))
+    log.info("⏰ [%s] lembrete agendado para daqui a %ds", user_id, segundos)
+
+
+async def posta_enquete(canal, quem: str, pergunta: str, opcoes: list[str]) -> None:
+    """"Jarvis, faz uma enquete": a pergunta no canal, uma reação numerada por opção."""
+    linhas = "\n".join(f"{m.POLL_NUMBERS[i]} {opcao}" for i, opcao in enumerate(opcoes))
+    try:
+        # o texto vem do Gemini: um "@everyone" nele não pode marcar o servidor todo
+        msg = await canal.send(
+            m.POLL.format(quem=quem or "Alguém", pergunta=pergunta, opcoes=linhas),
+            allowed_mentions=AllowedMentions.none(),
+        )
+        for i in range(len(opcoes)):
+            await msg.add_reaction(m.POLL_NUMBERS[i])
+    except Exception:  # sem permissão de reagir, a enquete fica sem os botões — sem derrubar a conversa
+        log.warning("📊 não consegui postar a enquete", exc_info=True)
+
+
+async def aplica_extras(resposta: gemini.Resposta, canal, guild_id: int, user_id: int, quem: str) -> None:
+    """Os lembretes e as enquetes que o Gemini criou nesta resposta."""
+    for segundos, lembrete in resposta.lembretes:
+        agenda_lembrete(canal, guild_id, user_id, segundos, lembrete)
+    for pergunta, opcoes in resposta.enquetes:
+        await posta_enquete(canal, quem, pergunta, opcoes)

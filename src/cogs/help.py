@@ -48,10 +48,21 @@ _SECTIONS = [
         ),
     ),
     (
+        "👑 Quem manda em mim",
+        (
+            "Quem me chamou com `/entrar` é o dono: só ele me tira da call e troca a minha voz.\n"
+            "`/modo` — **aberto** (todo mundo da call fala comigo) ou **só o dono**\n"
+            "`/permitir` e `/bloquear` — libero ou ignoro alguém (também por voz:"
+            f' *"{m.NOME}, deixa o Pedro falar com você"*)\n'
+            "Se o dono sair da call, quem ficou passa a mandar."
+        ),
+    ),
+    (
         "⚙️ Comandos",
         (
             "`/voz` — troco a minha voz neste servidor (masculinas e femininas)\n"
             "`/status` — como eu estou: call, voz, memória, lembretes\n"
+            "`/perguntar` — me pergunta por escrito (respondo aqui e, na call, falando)\n"
             "`/esquecer` — apago a memória da conversa na hora"
         ),
     ),

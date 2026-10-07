@@ -11,6 +11,7 @@ import asyncio
 import io
 import logging
 import time
+import unicodedata
 
 import discord
 
@@ -21,6 +22,18 @@ from core.audio import BYTES_POR_S, FalaAoVivo, FonteDaFala
 log = logging.getLogger(__name__)
 
 EMPTY_LEAVE_S = 120  # segundos sozinho na call até sair (cogs/lifecycle.py)
+
+# quem fala com o bot: no modo aberto, todo mundo da call; no modo dono, só quem
+# o chamou (o /entrar) e quem ele liberar
+MODO_ABERTO = "aberto"
+MODO_DONO = "dono"
+
+
+def _sem_acento(texto: str) -> str:
+    """"Júlia" → "julia": o Gemini escreve o nome do jeito que ouviu."""
+    return "".join(
+        c for c in unicodedata.normalize("NFD", texto.casefold()) if unicodedata.category(c) != "Mn"
+    )
 
 
 class Assistente:
@@ -37,6 +50,11 @@ class Assistente:
         self._efeito_ate = 0.0  # monotonic em que o estalo atual termina
         self._empty_task: asyncio.Task | None = None  # timer do auto-leave
         self._nomes: dict[int, str] = {}  # user_id → apelido, para o Gemini saber com quem fala
+        # quem manda: quem deu o /entrar; vale enquanto o bot está na call
+        self.dono_id: int | None = None
+        self.modo = MODO_ABERTO
+        self.convidados: set[int] = set()  # no modo dono, também falam com o bot
+        self.bloqueados: set[int] = set()  # ignorados em qualquer modo ("ignora o Pedro")
 
     # --- estado ---
 
@@ -53,16 +71,108 @@ class Assistente:
             return []
         return [membro for membro in self.voice.channel.members if not membro.bot]
 
+    def ids_na_call(self) -> list[int]:
+        """Quem está na call com o bot (sem ele), pelos voice_states (ver nomes_na_call)."""
+        if not self.voice or not self.voice.channel:
+            return []
+        eu = self.guild.me.id if self.guild.me is not None else None
+        return [uid for uid in self.voice.channel.voice_states if uid != eu]
+
+    # --- quem manda ---
+
+    def _dono_presente(self) -> bool:
+        return self.dono_id is not None and self.dono_id in self.ids_na_call()
+
+    def pode_falar(self, user_id: int) -> bool:
+        """O bot escuta essa pessoa? Bloqueado nunca; no modo dono, só ele e os
+        convidados — a não ser que o dono tenha saído da call (aí volta a ser aberto)."""
+        if user_id == self.dono_id:
+            return True
+        if user_id in self.bloqueados:
+            return False
+        if self.modo == MODO_ABERTO or not self._dono_presente():
+            return True
+        return user_id in self.convidados
+
+    def manda(self, user_id: int) -> bool:
+        """Pode tirar o bot da call, mudar o modo e liberar/bloquear pessoas: o
+        dono — ou qualquer um, se não há dono na call (ninguém fica sem controle)."""
+        return user_id == self.dono_id or not self._dono_presente()
+
+    def assume(self, user_id: int) -> None:
+        """Quem deu o /entrar vira o dono, se não há outro dono na call."""
+        if not self._dono_presente():
+            self.dono_id = user_id
+            self.convidados.discard(user_id)
+            self.bloqueados.discard(user_id)
+
+    def define_modo(self, modo: str) -> None:
+        if modo not in (MODO_ABERTO, MODO_DONO):
+            raise ValueError(f"modo desconhecido: {modo}")
+        self.modo = modo
+
+    def libera(self, user_id: int) -> None:
+        self.bloqueados.discard(user_id)
+        self.convidados.add(user_id)
+
+    def bloqueia(self, user_id: int) -> None:
+        if user_id == self.dono_id:
+            raise ValueError("o dono não pode ser bloqueado")
+        self.convidados.discard(user_id)
+        self.bloqueados.add(user_id)
+
+    def passa_o_controle(self) -> int | None:
+        """O dono saiu da call: quem estiver lá (e não for bot) assume. None = ninguém."""
+        bots = {m.id for m in self.pessoas_e_bots() if m.bot}
+        for uid in self.ids_na_call():
+            if uid != self.dono_id and uid not in bots and uid not in self.bloqueados:
+                self.dono_id = uid
+                self.convidados.discard(uid)
+                return uid
+        self.dono_id = None
+        return None
+
+    def pessoas_e_bots(self) -> list[discord.Member]:
+        if not self.voice or not self.voice.channel:
+            return []
+        return list(self.voice.channel.members)
+
+    async def controle(self, acao: str, valor: str) -> dict:
+        """O que o Gemini pede por voz, já conferido que quem pediu manda:
+        acao "modo" (aberto/dono), "liberar" ou "bloquear" (pelo nome de quem está na call)."""
+        if acao == "modo":
+            try:
+                self.define_modo(valor.strip().lower())
+            except ValueError as erro:
+                return {"erro": str(erro)}
+            return {"resultado": f"modo {self.modo}"}
+        if acao not in ("liberar", "bloquear"):
+            return {"erro": f"ação desconhecida: {acao}"}
+        procurado = _sem_acento(valor.strip())
+        if not procurado:
+            return {"erro": "de quem?"}
+        nomes = {uid: await self.nome_de(uid) for uid in self.ids_na_call()}
+        achados = [uid for uid, nome in nomes.items() if nome and procurado in _sem_acento(nome)]
+        exatos = [uid for uid in achados if _sem_acento(nomes[uid]) == procurado]
+        achados = exatos or achados
+        if not achados:
+            return {"erro": f"ninguém na call se chama {valor}", "na_call": [n for n in nomes.values() if n]}
+        if len(achados) > 1:
+            return {"erro": f"mais de uma pessoa com {valor}: qual?", "opcoes": [nomes[uid] for uid in achados]}
+        uid = achados[0]
+        try:
+            (self.libera if acao == "liberar" else self.bloqueia)(uid)
+        except ValueError as erro:
+            return {"erro": str(erro)}
+        return {"resultado": f"{nomes[uid]} {'liberado' if acao == 'liberar' else 'bloqueado'}"}
+
     async def nomes_na_call(self) -> list[str]:
         """Os apelidos de quem está na call com o bot (sem ele).
 
         Pelos voice_states do canal e não por channel.members: sem o intent de
         membros, quem já estava na call quando o bot entrou fica fora do cache.
         """
-        if not self.voice or not self.voice.channel:
-            return []
-        eu = self.guild.me.id if self.guild.me is not None else None
-        nomes = [await self.nome_de(uid) for uid in self.voice.channel.voice_states if uid != eu]
+        nomes = [await self.nome_de(uid) for uid in self.ids_na_call()]
         return [nome for nome in nomes if nome]
 
     async def nome_de(self, user_id: int) -> str:
@@ -118,6 +228,10 @@ class Assistente:
             self.escuta.stop()
             self.escuta = None
         self.cala()
+        # a próxima sessão começa do zero: quem der o /entrar manda
+        self.dono_id, self.modo = None, MODO_ABERTO
+        self.convidados.clear()
+        self.bloqueados.clear()
         if self.voice is not None and self.voice.is_connected():
             await self.voice.disconnect()
 

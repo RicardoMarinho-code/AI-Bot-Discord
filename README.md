@@ -27,6 +27,9 @@ também aparece escrita no chat.
 | `/notas` | Mostra as suas anotações feitas por voz (com `apagar`, apaga todas) |
 | `/esquecer` | Apaga a memória da conversa neste servidor, na hora |
 | `/lembretes` | Mostra os seus lembretes pendentes (com `cancelar`, apaga todos) |
+| `/perguntar` | Pergunta por escrito: a resposta vem no chat (e falada, se o bot estiver na call) |
+| `/modo` | Com quem o bot conversa: **aberto** (todo mundo da call) ou **só o dono** |
+| `/permitir` / `/bloquear` | O dono libera alguém no modo só o dono, ou faz o bot ignorar alguém |
 | `/voz` | Troca a voz do bot neste servidor, na hora (fica salva em `data/vozes.json`) |
 | `/status` | Como o bot está neste servidor: call, voz, memória, lembretes, cronômetro, placar, ping |
 | `/ajuda` | O guia, dentro do Discord |
@@ -81,6 +84,20 @@ também aparece escrita no chat.
   `data/lembretes.json` e voltam se o bot reiniciar. Por voz também dá para
   perguntar *"quais são meus lembretes?"* e pedir *"cancela meus lembretes"*.
 - Se todo mundo sair da call, ele sai sozinho depois de 2 minutos.
+
+### Quem manda no bot
+
+Quem deu o `/entrar` é o **dono** da sessão. Só ele tira o bot da call (pelo
+`/sair` ou por voz), troca a voz e muda as regras abaixo. Se outra pessoa der
+o `/entrar`, o bot não sai da call do dono.
+
+- **Modo aberto** (o padrão): todo mundo na call fala com o bot.
+- **Modo só o dono** (`/modo`): o bot ignora as outras pessoas, a não ser quem o
+  dono liberar com `/permitir` ou por voz (*"Jarvis, deixa o Pedro falar com
+  você"*). O bot nem transcreve quem ele não escuta.
+- **Bloquear** (`/bloquear` ou *"Jarvis, ignora o Pedro"*): o bot ignora a pessoa
+  em qualquer modo.
+- Se o dono sair da call, o controle passa para quem ficou, e o chat avisa.
 
 O bot só conversa: não toca música, não manda recado para os outros e não mexe no Discord —
 se pedirem, ele diz que não consegue.
