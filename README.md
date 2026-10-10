@@ -240,10 +240,12 @@ sudo systemctl enable --now bot
 | Reiniciar | `sudo systemctl restart bot` |
 | Parar | `sudo systemctl stop bot` |
 
-**4. Atualizar o código.** No seu computador, empacote a pasta `src`:
+**4. Atualizar o código.** No seu computador, gere o `NOVIDADES.txt` (sem o
+git na VM, é dele que o bot tira *"o que tem de novo em você?"*) e empacote:
 
 ```bash
-tar --exclude=__pycache__ --exclude=.ruff_cache -czf jarvis-src.tar.gz src
+git log -30 --date=short --format="%h%x09%ad%x09%s" > NOVIDADES.txt
+tar --exclude=__pycache__ --exclude=.ruff_cache -czf jarvis-src.tar.gz src README.md requirements.txt NOVIDADES.txt
 ```
 
 Envie o arquivo para a VM (no Google Cloud, pelo botão **SSH → UPLOAD FILE**)

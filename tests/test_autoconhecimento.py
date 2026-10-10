@@ -39,6 +39,26 @@ def test_novidades_sem_git_aponta_o_readme(monkeypatch):
     assert "erro" in auto.novidades()
 
 
+def test_sem_git_as_novidades_vem_do_pacote(monkeypatch, tmp_path):
+    """Instalado pelo .tar.gz: o pacote traz o git log no NOVIDADES.txt."""
+    def sem_git(*a, **kw):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(auto.subprocess, "run", sem_git)
+    monkeypatch.setattr(auto, "RAIZ", tmp_path)
+    (tmp_path / "NOVIDADES.txt").write_text(
+        "0477230\t2026-10-10\tJarvis conhece a si mesmo\n114f5fd\t2026-10-07\tQuem manda no Jarvis\n",
+        encoding="utf-8",
+    )
+
+    resultado = auto.novidades(1)
+
+    assert resultado == {
+        "versao_atual": "0477230",
+        "mudancas": [{"data": "2026-10-10", "versao": "0477230", "mudanca": "Jarvis conhece a si mesmo"}],
+    }
+
+
 def test_novidades_no_repositorio_de_verdade():
     """Com o .git (o checkout do CI tem ao menos o último commit), sem simular nada."""
     resultado = auto.novidades(1)

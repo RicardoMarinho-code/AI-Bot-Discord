@@ -17,6 +17,9 @@ from pathlib import Path
 from services.observabilidade import mascara
 
 RAIZ = Path(__file__).resolve().parents[2]  # src/services/ → a raiz do projeto
+# instalado pelo .tar.gz (sem o .git): o pacote leva o git log neste arquivo
+# (o README ensina a gerar), no mesmo formato "versão<TAB>data<TAB>assunto"
+NOVIDADES_TXT = "NOVIDADES.txt"
 _SOLTOS = ("README.md", "requirements.txt")
 NOVIDADES_MAX = 30
 _LER_MAX_LINHAS = 250
@@ -65,8 +68,12 @@ def novidades(quantidade: int = 10) -> dict:
             cwd=RAIZ, capture_output=True, text=True, encoding="utf-8", timeout=5, check=True,
         ).stdout
     except (OSError, subprocess.SubprocessError):
-        # instalado sem o git (o .tar.gz do README): o README conta o que o bot faz
-        return {"erro": "sem o histórico do git nesta instalação", "dica": "leia o README.md com meu_codigo"}
+        try:
+            saida = (RAIZ / NOVIDADES_TXT).read_text(encoding="utf-8")
+        except OSError:
+            # nem git nem o NOVIDADES.txt: o README conta o que o bot faz
+            return {"erro": "sem o histórico do git nesta instalação", "dica": "leia o README.md com meu_codigo"}
+        saida = "\n".join(saida.splitlines()[:quantidade])
     mudancas = []
     for linha in saida.splitlines():
         versao, data, assunto = (linha.split("\t", 2) + ["", ""])[:3]
