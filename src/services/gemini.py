@@ -29,7 +29,7 @@ import numpy as np
 import config
 from core import lembretes, notas
 from core.audio import BYTES_POR_S, FRAME_BYTES
-from services import calculadora, speech
+from services import autoconhecimento, calculadora, speech
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +101,10 @@ _LIBERAR = "liberar_pessoa"
 _BLOQUEAR = "bloquear_pessoa"
 _CONTROLE = {_MODO: "modo", _LIBERAR: "liberar", _BLOQUEAR: "bloquear"}
 _SO_O_DONO = "só quem te chamou para a call (o dono) pode fazer isso: explique com educação"
+# o bot conhecendo a si mesmo (services/autoconhecimento): "o que tem de
+# novo?" vem do git; "como você funciona?" vem do próprio código-fonte
+_NOVIDADES = "minhas_novidades"
+_MEU_CODIGO = "meu_codigo"
 # sorteios de verdade: o modelo "sorteando" de cabeça repete sempre os mesmos
 # números (o 7, o 42) e a moeda quase sempre dá cara
 _SORTEAR = "sortear_numero"
@@ -246,6 +250,12 @@ def _instrucao(quem: str = "") -> str:
         f" Para sortear números, jogar dados, cara ou coroa ou escolher entre opções,"
         f" use as ferramentas {_SORTEAR} e {_ESCOLHER} e diga o resultado que elas"
         " derem — nunca invente um sorteio de cabeça."
+        f" Você é um programa em Python ({config.BOT_NAME}, um bot do Discord com o"
+        " py-cord e o Gemini Live), e conhece a si mesmo: para o que mudou em você"
+        f" (\"o que tem de novo?\", \"qual a sua versão?\"), use {_NOVIDADES}; para como você"
+        f" funciona por dentro ou onde algo está no seu código, use {_MEU_CODIGO} (listar"
+        " os arquivos, buscar um nome e ler o trecho) e responda pelo que leu, nunca"
+        " inventando. Falando, explique o código em palavras, sem ler código em voz alta."
         f" Para a hora em outra cidade ou país, use {_HORA_EM}; para quantos dias"
         f" faltam (ou passaram) até uma data e o dia da semana dela, {_SOBRE_A_DATA}."
         f" Para qualquer conta que não seja trivial, use {_CALCULAR} e fale o"
@@ -289,6 +299,23 @@ def le_lembrete(args: dict | None) -> tuple[int, str]:
     if not _LEMBRETE_MIN_S <= segundos <= _LEMBRETE_MAX_S:
         raise ValueError(f"o lembrete precisa ser de {_LEMBRETE_MIN_S}s a 24h")
     return segundos, str(args.get("texto") or "").strip()[:200]
+
+
+def sobre_mim(nome: str, args: dict | None) -> dict:
+    """As ferramentas de autoconhecimento, sem deixar um argumento ruim quebrar a conversa."""
+    args = args or {}
+    try:
+        if nome == _NOVIDADES:
+            return autoconhecimento.novidades(int(args.get("quantidade") or 10))
+        return autoconhecimento.meu_codigo(
+            str(args.get("acao", "")),
+            arquivo=str(args.get("arquivo") or ""),
+            texto=str(args.get("texto") or ""),
+            linha_inicial=int(args.get("linha_inicial") or 1),
+            linha_final=int(args.get("linha_final") or 0),
+        )
+    except (TypeError, ValueError, OSError) as erro:
+        return {"erro": f"não consegui: {erro}"}
 
 
 def divide_times(pessoas: list[str], quantidade: int) -> dict:
@@ -451,6 +478,34 @@ def _ferramentas() -> list:
                 parameters=types.Schema(type=types.Type.OBJECT, properties={
                     "nome": types.Schema(type=types.Type.STRING, description="o nome como foi dito"),
                 }, required=["nome"]),
+            ),
+            types.FunctionDeclaration(
+                name=_NOVIDADES,
+                description=(
+                    "As últimas mudanças em você mesmo (o histórico do seu código): data,"
+                    " versão e o que mudou, da mais nova para a mais velha."
+                ),
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "quantidade": types.Schema(
+                        type=types.Type.INTEGER,
+                        description=f"quantas mudanças (1 a {autoconhecimento.NOVIDADES_MAX}, padrão 10)",
+                    ),
+                }),
+            ),
+            types.FunctionDeclaration(
+                name=_MEU_CODIGO,
+                description=(
+                    "O seu próprio código-fonte. listar: os arquivos e o que cada um faz;"
+                    " buscar: onde um texto aparece (arquivo:linha); ler: um trecho de um"
+                    " arquivo, com o número das linhas. Comece buscando ou listando."
+                ),
+                parameters=types.Schema(type=types.Type.OBJECT, properties={
+                    "acao": types.Schema(type=types.Type.STRING, enum=["listar", "buscar", "ler"]),
+                    "arquivo": types.Schema(type=types.Type.STRING, description="para ler: ex. src/core/listen.py"),
+                    "texto": types.Schema(type=types.Type.STRING, description="para buscar: ex. pode_falar"),
+                    "linha_inicial": types.Schema(type=types.Type.INTEGER, description="para ler (padrão 1)"),
+                    "linha_final": types.Schema(type=types.Type.INTEGER, description="para ler (opcional)"),
+                }, required=["acao"]),
             ),
             types.FunctionDeclaration(
                 name=_SORTEAR,
@@ -832,6 +887,9 @@ async def responde(
                                 retorno = await controle(
                                     _CONTROLE[chamada.name], str(args.get("modo") or args.get("nome") or ""),
                                 )
+                        elif chamada.name in (_NOVIDADES, _MEU_CODIGO):
+                            # git e arquivos: fora do loop de eventos (o áudio da call não espera)
+                            retorno = await asyncio.to_thread(sobre_mim, chamada.name, chamada.args)
                         elif chamada.name == _NA_CALL:
                             retorno = {"pessoas": await na_call() if na_call is not None else []}
                         elif chamada.name == _TIMES:

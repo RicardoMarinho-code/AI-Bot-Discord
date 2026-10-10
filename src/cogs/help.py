@@ -35,7 +35,8 @@ _SECTIONS = [
             '📊 Enquetes no chat: *"faz uma enquete: pizza ou hambúrguer?"*\n'
             '⏱️ Cronômetro: *"inicia o cronômetro"*, *"quanto tempo deu?"*\n'
             '🏆 Placar: *"ponto pro Pedro"*, *"qual o placar?"*, *"zera o placar"*\n'
-            '👥 *"Quem tá na call?"*, *"divide a call em dois times"*'
+            '👥 *"Quem tá na call?"*, *"divide a call em dois times"*\n'
+            '🤖 *"O que tem de novo em você?"*, *"como você funciona por dentro?"*'
         ),
     ),
     (

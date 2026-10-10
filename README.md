@@ -75,6 +75,10 @@ também aparece escrita no chat.
   para o chat com uma reação numerada por opção (o bot precisa poder reagir).
 - **Anotações:** *"Jarvis, anota: comprar pão"*, *"o que eu anotei?"*,
   *"apaga minhas notas"*. Ficam salvas em `data/notas.json`; o `/notas` mostra.
+- **Ele conhece a si mesmo:** *"Jarvis, o que tem de novo em você?"* (do
+  histórico do git) e *"como você sabe quem está na call?"* — ele lê o próprio
+  código-fonte para responder (só os arquivos de `src/`, o README e o
+  `requirements.txt`; nunca o `.env` nem o `data/`).
 - **Quem está na call:** *"Jarvis, quem tá aqui?"*, *"sorteia alguém da call
   pra começar"*.
 - **Times:** *"Jarvis, divide a call em dois times"*, *"faz duplas com Ana, Beto,

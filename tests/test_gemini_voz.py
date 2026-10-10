@@ -205,7 +205,7 @@ def test_resposta_chega_aos_pedacos_e_e_repassada_na_hora(sessao):
         gemini._SORTEAR, gemini._ESCOLHER, gemini._HORA_EM, gemini._SOBRE_A_DATA, gemini._CALCULAR,
         gemini._NA_CALL, gemini._MEUS_LEMBRETES, gemini._CANCELA_LEMBRETES, gemini._ENQUETE,
         gemini._CRONOMETRO, gemini._PLACAR, gemini._ANOTAR, gemini._MINHAS_NOTAS, gemini._APAGAR_NOTAS,
-        gemini._TIMES, gemini._LEMBRETE,
+        gemini._TIMES, gemini._LEMBRETE, gemini._NOVIDADES, gemini._MEU_CODIGO,
     }
     assert not resposta.quer_sair
     # a pergunta vai marcada: início, áudio 16 kHz, fim
