@@ -43,6 +43,9 @@ _TRANSCRICAO_ATRASADA_S = 0.6
 _DESPEDIDA_S = 5.0
 # turnos só de ferramenta seguidos, antes de desistir de esperar a fala
 _TURNOS_DE_FERRAMENTA = 3
+# a pesquisa Google sem cota: fica de fora por um tempo (ver responde)
+_BUSCA_PAUSA_S = 3600
+_busca_pausada_ate = 0.0
 # o tier grátis aceita poucas sessões Live simultâneas por chave
 _sessoes = asyncio.Semaphore(2)
 # memória curta por servidor: "e a de Portugal?" depois de "capital da França"
@@ -440,13 +443,14 @@ def executa_ferramenta(nome: str, args: dict | None) -> dict:
     return {"erro": f"ferramenta desconhecida: {nome}"}
 
 
-def _ferramentas() -> list:
+def _ferramentas(com_busca: bool = True) -> list:
     from google.genai import types
 
     inteiro = types.Type.INTEGER
+    # acesso à internet: a busca roda no Google e não gera tool_call para o bot
+    busca = [types.Tool(google_search=types.GoogleSearch())] if com_busca else []
     return [
-        # acesso à internet: a busca roda no Google e não gera tool_call para o bot
-        types.Tool(google_search=types.GoogleSearch()),
+        *busca,
         types.Tool(function_declarations=[
             types.FunctionDeclaration(
                 name=_SAIR,
@@ -778,7 +782,7 @@ def voz_de(guild_id: int) -> str:
     return _voz_do_servidor.get(guild_id, config.GEMINI_VOZ)
 
 
-def _config(quem: str = "", voz: str = ""):
+def _config(quem: str = "", voz: str = "", com_busca: bool = True):
     from google.genai import types
 
     fala = None
@@ -792,7 +796,7 @@ def _config(quem: str = "", voz: str = ""):
         response_modalities=["AUDIO"],
         system_instruction=_instrucao(quem),
         speech_config=fala,
-        tools=_ferramentas(),
+        tools=_ferramentas(com_busca),
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
         # quem decide onde a fala começa e termina é a escuta do bot: a pergunta
@@ -803,10 +807,64 @@ def _config(quem: str = "", voz: str = ""):
     )
 
 
+def _cota_estourada(erro: Exception) -> bool:
+    """10/10, na VM: "1011 None. You exceeded your current quota" — e só com a busca ligada."""
+    texto = str(erro).casefold()
+    return "quota" in texto or "resource_exhausted" in texto
+
+
 async def responde(
     guild_id: int,
     pcm: bytes,
     *,
+    quem: str = "",
+    ao_falar: Callable[[bytes], None] | None = None,
+    na_call: Callable[[], Awaitable[list[str]]] | None = None,
+    user_id: int = 0,
+    texto: str | None = None,
+    manda: bool = True,
+    controle: Callable[[str, str], Awaitable[dict]] | None = None,
+) -> Resposta:
+    """A pergunta → a resposta (ver _responde_uma_vez), com a pesquisa Google
+    quando der.
+
+    10/10: a cota da pesquisa (grounding) do plano grátis acabou e TODA
+    pergunta falhava — a sessão só com as nossas ferramentas seguia funcionando.
+    Cota estourada antes de falar: a mesma pergunta vai de novo na hora, sem a
+    busca, e a busca fica de fora por _BUSCA_PAUSA_S antes de tentar outra vez.
+    """
+    global _busca_pausada_ate
+    com_busca = config.GEMINI_BUSCA and time.monotonic() >= _busca_pausada_ate
+    falou = False
+
+    def repassa(pedaco: bytes) -> None:
+        nonlocal falou
+        falou = True
+        if ao_falar is not None:
+            ao_falar(pedaco)
+
+    pedido = {
+        "quem": quem, "ao_falar": repassa, "na_call": na_call, "user_id": user_id,
+        "texto": texto, "manda": manda, "controle": controle,
+    }
+    try:
+        return await _responde_uma_vez(guild_id, pcm, com_busca=com_busca, **pedido)
+    except Exception as erro:
+        if not com_busca or falou or not _cota_estourada(erro):
+            raise
+        _busca_pausada_ate = time.monotonic() + _BUSCA_PAUSA_S
+        log.warning(
+            "🔎 a cota da pesquisa Google do Gemini acabou — respondendo sem ela pelos próximos %d min",
+            _BUSCA_PAUSA_S // 60,
+        )
+        return await _responde_uma_vez(guild_id, pcm, com_busca=False, **pedido)
+
+
+async def _responde_uma_vez(
+    guild_id: int,
+    pcm: bytes,
+    *,
+    com_busca: bool,
     quem: str = "",
     ao_falar: Callable[[bytes], None] | None = None,
     na_call: Callable[[], Awaitable[list[str]]] | None = None,
@@ -837,7 +895,7 @@ async def responde(
     async with (
         _sessoes,
         asyncio.timeout(_TEMPO_MAX_S),
-        _get_cliente().aio.live.connect(model=config.GEMINI_LIVE_MODEL, config=_config(quem, voz_de(guild_id))) as sessao,
+        _get_cliente().aio.live.connect(model=config.GEMINI_LIVE_MODEL, config=_config(quem, voz_de(guild_id), com_busca)) as sessao,
     ):
         memoria = _memoria(guild_id)
         if texto is not None:

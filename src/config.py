@@ -31,6 +31,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.8-live").strip()
 # uma das vozes prontas do Gemini (Puck, Zephyr, Kore, Charon…); vazio = padrão
 GEMINI_VOZ = os.getenv("GEMINI_VOZ", "").strip()
+# pesquisa Google nas respostas (notícias, placares...): tem cota própria, e
+# pequena no plano grátis. Sem cota, o bot responde sem ela sozinho; 0 = nunca
+GEMINI_BUSCA = _env_liga("GEMINI_BUSCA")
 # o Gemini não sabe que horas são: o bot conta, neste fuso
 FUSO = os.getenv("FUSO", "America/Sao_Paulo").strip()
 # a pergunta e a resposta também vão escritas para o canal do /entrar

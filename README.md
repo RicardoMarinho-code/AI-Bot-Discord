@@ -284,6 +284,7 @@ Tudo fica no `.env` (o [`.env.example`](.env.example) explica cada opção).
 | `GROQ_API_KEY` | vazio | Transcrição na nuvem (melhor e mais leve). Sem ela, usa o Whisper local |
 | `WHISPER_MODEL` | `base` | Whisper local: `tiny` (rápido), `base`, `small` (preciso) |
 | `VOICE_IDIOMA` | `pt` | Idioma da call para a transcrição |
+| `GEMINI_BUSCA` | ligada | A pesquisa Google nas respostas. Ela tem cota própria (pequena no plano grátis): quando acaba, o bot responde sem ela por 1 hora e tenta de novo. `0` desliga de vez |
 | `GEMINI_VOZ` | padrão | A voz do bot: `Puck`, `Zephyr`, `Kore`, `Charon`… |
 | `FUSO` | `America/Sao_Paulo` | Fuso usado para dizer que horas são |
 | `VOICE_CONVERSA_S` | `8` | Segundos do modo conversa (`0` desliga) |
